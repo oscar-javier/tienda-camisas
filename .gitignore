@@ -1,0 +1,10 @@
+# Archivos de entorno y secretos
+.env
+.env.*
+*.local
+config.secret.js
+
+# Sistema operativo y editor
+.DS_Store
+Thumbs.db
+.vscode/
