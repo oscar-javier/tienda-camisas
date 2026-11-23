@@ -21,8 +21,7 @@
   let FAST = false,
     _id = 0;
   const uid = (p) => p + Date.now().toString(36) + (++_id).toString(36) + Math.floor(Math.random() * 1e4).toString(36);
-  const KEY = "estampa_hn_db_v1",
-    INFRAME = window.self !== window.top;
+  const KEY = "estampa_hn_db_v1";
   const EMAIL = /^[^\s@<>()]{1,64}@[^\s@<>()]+\.[A-Za-z]{2,}$/;
   const SIZES = ["S", "M", "L", "XL", "XXL"];
   const COLORS = {
@@ -385,6 +384,7 @@
     }
     return db.users.find((u) => u.id === s.uid) || null;
   };
+  const esAdministrador = (usuario = user()) => Boolean(usuario && usuario.role === "admin");
   function mail(to, subject, body, meta) {
     db.mails.push({ id: uid("m"), to, subject, body, ts: now(), read: false, meta: meta || null });
   }
@@ -874,21 +874,28 @@
   }
   function renderHeader() {
     const u = user();
+    const puedeVerQa = esAdministrador(u);
+    const enlaceQaEscritorio = puedeVerQa
+      ? '<button class="btn" data-act="nav" data-v="qa">🧪 Pruebas QA</button>'
+      : "";
+    const opcionesMovil = [
+      ["shop", "🛍", "Tienda"],
+      ["cart", "🛒", "Carrito"],
+      ["account", "👤", u ? "Cuenta" : "Entrar"],
+      ...(puedeVerQa ? [["qa", "🧪", "Pruebas"]] : []),
+    ];
     $("#hdr").innerHTML =
       '<header class="top"><div class="wrap hbar"><button class="logo btn" style="border:0;background:none" data-act="nav" data-v="shop" aria-label="Inicio">👕 Estampa<b>HN</b></button>' +
       '<div class="search"><input id="q" type="search" placeholder="Buscar camisas (ej. café, fútbol, humor)…" value="' +
       esc(S.f.q) +
       '" autocomplete="off" data-in="q" aria-label="Buscar"></div>' +
-      '<nav class="dnav"><button class="btn" data-act="nav" data-v="shop">Tienda</button><button class="btn" data-act="nav" data-v="qa">🧪 Pruebas QA</button><button class="btn" data-act="nav" data-v="account">' +
+      '<nav class="dnav"><button class="btn" data-act="nav" data-v="shop">Tienda</button>' +
+      enlaceQaEscritorio +
+      '<button class="btn" data-act="nav" data-v="account">' +
       (u ? accountChip(u) : "Entrar") +
       "</button></nav>" +
       '<div class="hicons"><button class="btn" data-act="ov" data-o="mail" aria-label="Correos">✉<span class="badge mailN"></span></button><button class="btn" data-act="ov" data-o="cart" aria-label="Carrito">🛒<span class="badge cartN"></span></button></div></div></header>';
-    $("#bottom").innerHTML = [
-      ["shop", "🛍", "Tienda"],
-      ["cart", "🛒", "Carrito"],
-      ["account", "👤", u ? "Cuenta" : "Entrar"],
-      ["qa", "🧪", "Pruebas"],
-    ]
+    $("#bottom").innerHTML = opcionesMovil
       .map(
         ([v, i, t]) =>
           '<button class="' +
@@ -918,19 +925,26 @@
     const v = S.view,
       u = user();
     let h = "";
-    if (v === "shop") h = shopView();
+    if (S.view === "shop") h = shopView();
     else if (v === "auth") h = authView();
     else if (v === "verify") h = verifyView(u);
     else if (v === "checkout") h = checkoutView(u);
     else if (v === "done") h = doneView();
     else if (v === "account") h = u ? accountView(u) : authView();
-    else if (v === "qa") h = qaView();
+    else if (v === "qa") {
+      if (!esAdministrador(u)) {
+        S.view = "shop";
+        h = shopView();
+      } else {
+        h = qaView();
+      }
+    }
     $("#main").innerHTML = h;
-    if (v === "shop") {
+    if (S.view === "shop") {
       renderFilters();
       renderGrid();
     }
-    if (v === "qa") renderQa();
+    if (S.view === "qa") renderQa();
   }
   function renderAll() {
     renderHeader();
@@ -1051,16 +1065,7 @@
     if (S.ov === "prod" && S.modal) h = prodModal();
     else if (S.ov === "cart") h = cartDrawer();
     else if (S.ov === "mail") h = mailModal();
-    else if (S.ov === "sim")
-      h =
-        '<div class="ov" data-act="closeOv"><div class="simwrap"><div style="color:#fff">Simulador móvil · <button class="chip" data-act="simW" data-w="375">375 (teléfono)</button> <button class="chip" data-act="simW" data-w="768">768 (tablet)</button> <button class="chip" data-act="closeOv" data-force="1">Cerrar ✕</button></div><iframe id="simf" title="Simulador móvil" sandbox="allow-scripts allow-same-origin" style="width:' +
-        (S.simW || 375) +
-        'px;max-width:100%"></iframe></div></div>';
     o.innerHTML = h;
-    if (S.ov === "sim") {
-      const f = $("#simf");
-      if (f) f.src = location.href.split("#")[0];
-    }
     document.body.classList.toggle("lock", !!S.ov);
   }
   function prodModal() {
@@ -1513,7 +1518,7 @@
     [
       "Abrir en el teléfono real y recorrer tienda, carrito y pago",
       "Rotar el teléfono (vertical/horizontal)",
-      "Usar el simulador de 375 px del panel",
+      "Probar la vista responsiva desde las DevTools del navegador (375 px)",
     ],
     [
       "Agregar varias camisas personalizadas y cambiar cantidades",
@@ -1633,7 +1638,7 @@
         (window.innerWidth <= 860
           ? "diseño móvil activo (barra inferior, filtros plegables)"
           : "diseño de escritorio activo") +
-        ". Usa “Abrir simulador móvil” para ver 375 px.",
+        ".",
     );
   };
   TESTS[3] = async (t) => {
@@ -2030,9 +2035,7 @@
     const u = user();
     return (
       '<h2 style="margin-top:20px">🧪 Panel de pruebas (QA)</h2><p class="mut">Las pruebas automáticas se ejecutan sobre una copia: al terminar, tus datos reales se restauran.</p>' +
-      '<div class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="runAll">▶ Ejecutar las 10 pruebas</button>' +
-      (INFRAME ? "" : '<button class="btn" data-act="ov" data-o="sim">📱 Abrir simulador móvil</button>') +
-      "</div></div>" +
+      '<div class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="runAll">▶ Ejecutar las 10 pruebas</button></div></div>' +
       '<div id="qaRes">' +
       qaResultsHtml() +
       "</div>" +
@@ -2108,6 +2111,10 @@
     nav: (el) => {
       let v = el.dataset.v;
       if (v === "account" && !user()) v = "auth";
+      if (v === "qa" && !esAdministrador()) {
+        toast("Acceso restringido a administradores", "err");
+        v = "shop";
+      }
       go(v);
     },
     scrollShop: () => {
@@ -2282,10 +2289,6 @@
     },
     runAll: () => runTests(),
     runGroup: (el) => runTests(+el.dataset.g),
-    simW: (el) => {
-      S.simW = +el.dataset.w;
-      renderOverlay();
-    },
     saveHtml: () => {
       download("tienda-camisas.html", buildHtml(), "text/html");
       toast("HTML descargado con los datos actuales", "ok");
@@ -2486,7 +2489,7 @@
     if (e.key === KEY && e.newValue && !S.qaRunning) {
       try {
         db = JSON.parse(e.newValue);
-        S.ov !== "sim" && renderAll();
+        renderAll();
       } catch (x) {}
     }
   });
