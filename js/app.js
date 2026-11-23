@@ -76,6 +76,18 @@
     "Valle",
     "Yoro",
   ];
+  const REGLAS_PRECIO = {
+    extraTextoPersonalizado: 35,
+    extraCambioDiseno: 50,
+    extraTallaGrande: 20,
+    tallasConRecargo: ["XL", "XXL"],
+    montoEnvioGratis: 1000,
+    costoEnvioEstandar: 80,
+    factorIsvIncluido: 15 / 115,
+    lempirasPorPuntoGanado: 10,
+    puntosPorLempiraCanjeado: 10,
+    porcentajeMaximoCanje: 0.5,
+  };
   const SESSION_MS = 30 * 60 * 1000;
   function rndHex(n) {
     const a = new Uint8Array(n);
@@ -300,7 +312,7 @@
     const rnd = (a) => a[Math.floor(R() * a.length)];
     const people = [demo, demo, demo, demo, demo, ...mocks, ...mocks, nuevo];
     people.sort(() => R() - 0.5);
-    people.forEach((u, k) => {
+    people.forEach((u) => {
       const items = [];
       const nI = 1 + Math.floor(R() * 3);
       for (let i = 0; i < nI; i++) {
@@ -337,7 +349,6 @@
         },
       });
     });
-    // pedidos de invitados
     for (let i = 0; i < 3; i++) {
       const p = rnd(db.products);
       createOrder({
@@ -357,8 +368,6 @@
         pay: { method: "card", brand: "Visa", last4: "4242" },
       });
     }
-    // el usuario demo canjea puntos en un pedido
-    // correo pendiente del usuario sin verificar
     sendVerification(nuevo, true);
     db.mails.forEach((m) => (m.read = true));
     save();
@@ -507,13 +516,20 @@
       .replace(/[^\p{L}\p{N} .,!¡?¿&'\-]/gu, "")
       .slice(0, 20)
       .trim();
-  function unitPrice(p, it) {
-    let x = p.price;
-    if (it.text) x += 35;
-    if ((it.design || "") !== p.design) x += 50;
-    if (it.size === "XL" || it.size === "XXL") x += 20;
-    return x;
+  function calcularPrecioUnitarioCamisa(producto, configuracion) {
+    let precioFinal = producto.price;
+    if (configuracion.text) {
+      precioFinal += REGLAS_PRECIO.extraTextoPersonalizado;
+    }
+    if ((configuracion.design || "") !== producto.design) {
+      precioFinal += REGLAS_PRECIO.extraCambioDiseno;
+    }
+    if (REGLAS_PRECIO.tallasConRecargo.includes(configuracion.size)) {
+      precioFinal += REGLAS_PRECIO.extraTallaGrande;
+    }
+    return precioFinal;
   }
+  const unitPrice = calcularPrecioUnitarioCamisa;
   function cartAdd(it) {
     const p = P(it.pid);
     if (!p) return { ok: false, error: "Producto inexistente." };
@@ -547,38 +563,70 @@
       })
       .filter(Boolean);
   }
-  function totals(items, { coupon = "", redeem = 0, u = null } = {}) {
+  function calcularDescuentoCupon(subtotal, codigoCupon) {
+    if (!codigoCupon) return { coupon: null, descuento: 0 };
+    const codigoNormalizado = String(codigoCupon).trim().toUpperCase();
+    const cuponActivo = db.coupons.find((item) => item.code === codigoNormalizado && item.active) || null;
+    const descuento = cuponActivo ? r2((subtotal * cuponActivo.pct) / 100) : 0;
+    return { coupon: cuponActivo, descuento };
+  }
+  function calcularDescuentoPuntos(montoDisponible, puntosSolicitados, usuario) {
+    const monto = Number(montoDisponible);
+    const puntosSolicitadosEnteros = Number(puntosSolicitados);
+    if (
+      !usuario ||
+      !usuario.verified ||
+      !Number.isFinite(monto) ||
+      monto < 0 ||
+      !Number.isFinite(puntosSolicitadosEnteros) ||
+      puntosSolicitadosEnteros <= 0
+    ) {
+      return { puntosUsados: 0, descuento: 0 };
+    }
+    const topePuntosPorPedido = Math.floor(
+      monto * REGLAS_PRECIO.porcentajeMaximoCanje * REGLAS_PRECIO.puntosPorLempiraCanjeado,
+    );
+    const puntosUsados = Math.max(
+      0,
+      Math.min(Math.floor(puntosSolicitadosEnteros), usuario.points, topePuntosPorPedido),
+    );
+    return {
+      puntosUsados,
+      descuento: r2(puntosUsados / REGLAS_PRECIO.puntosPorLempiraCanjeado),
+    };
+  }
+  function calcularDesglosePedido(items, { coupon = "", redeem = 0, u = null } = {}) {
     const lines = cartLines(items);
-    const subtotal = r2(lines.reduce((a, l) => a + l.line, 0));
-    let c = null,
-      cd = 0;
-    if (coupon) {
-      c = db.coupons.find((x) => x.code === String(coupon).trim().toUpperCase() && x.active) || null;
-      if (c) cd = r2((subtotal * c.pct) / 100);
-    }
-    let after = r2(subtotal - cd),
-      usedPts = 0,
-      pr = 0;
-    if (u && u.verified && redeem > 0) {
-      usedPts = Math.max(0, Math.min(Math.floor(redeem), u.points, Math.floor(after * 5)));
-      pr = r2(usedPts / 10);
-    }
-    after = r2(after - pr);
-    const ship = lines.length === 0 ? 0 : after >= 1000 ? 0 : 80;
-    const total = r2(after + ship);
+    const subtotal = r2(lines.reduce((acumulado, linea) => acumulado + linea.line, 0));
+
+    const { coupon: cuponAplicado, descuento: descuentoCupon } = calcularDescuentoCupon(subtotal, coupon);
+    const subtotalTrasCupon = r2(subtotal - descuentoCupon);
+
+    const { puntosUsados, descuento: descuentoPuntos } = calcularDescuentoPuntos(
+      subtotalTrasCupon,
+      redeem,
+      u,
+    );
+    const subtotalNeto = r2(subtotalTrasCupon - descuentoPuntos);
+
+    const costoEnvio =
+      lines.length === 0 ? 0 : subtotalNeto >= REGLAS_PRECIO.montoEnvioGratis ? 0 : REGLAS_PRECIO.costoEnvioEstandar;
+    const total = r2(subtotalNeto + costoEnvio);
+
     return {
       lines,
       subtotal,
-      coupon: c,
-      cd,
-      usedPts,
-      pr,
-      ship,
+      coupon: cuponAplicado,
+      cd: descuentoCupon,
+      usedPts: puntosUsados,
+      pr: descuentoPuntos,
+      ship: costoEnvio,
       total,
-      isv: r2((total * 15) / 115),
-      earn: Math.floor(after / 10),
+      isv: r2(total * REGLAS_PRECIO.factorIsvIncluido),
+      earn: Math.floor(subtotalNeto / REGLAS_PRECIO.lempirasPorPuntoGanado),
     };
   }
+  const totals = calcularDesglosePedido;
   function createOrder({ u, contact, pay, coupon, redeem, items, ts }) {
     const T = totals(items, { coupon, redeem, u });
     const o = {
@@ -1561,8 +1609,6 @@
     try {
       for (const s of document.styleSheets) for (const r of s.cssRules) if (r.type === CSSRule.MEDIA_RULE) hasMq = true;
     } catch (e) {
-      // Hoja de estilos externa abierta con file://: el navegador no deja leer sus reglas.
-      // Se comprueba el comportamiento real: la barra inferior solo debe verse en ≤ 860 px.
       hasMq = window.innerWidth <= 860 === (getComputedStyle($("#bottom")).display === "flex");
     }
     t.ok(hasMq, "CSS con media queries para móvil");
@@ -2444,7 +2490,6 @@
       } catch (x) {}
     }
   });
-  // aviso de expiración de sesión
   setInterval(() => {
     if (db && db.session && db.session.exp < now() && !S.qaRunning) {
       db.session = null;
