@@ -233,6 +233,102 @@
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
+  const USUARIOS_MOCK_INICIALES = [
+    ["Carlos Mejía", true],
+    ["María Fernanda López", true],
+    ["José Reyes", true],
+    ["Ana Sofía Paz", true],
+    ["Luis Cárcamo", false],
+    ["Daniela Ordóñez", true],
+    ["Kevin Zelaya", true],
+    ["Gabriela Banegas", false],
+  ];
+  const CIUDADES_DEMO = ["San Pedro Sula", "Tegucigalpa", "La Ceiba", "Choloma", "Comayagua"];
+  const COLONIAS_DEMO = ["Las Brisas", "El Prado", "Los Álamos", "Kennedy"];
+  const TEXTOS_CAMISA_DEMO = ["Papá", "Team HN", "Catracho", "Los Pibes"];
+
+  async function crearUsuarioSemilla(nombre, correo, clave, verificado, rol = "cliente") {
+    const salt = rndHex(16);
+    const usuario = {
+      id: uid("u"),
+      name: nombre,
+      email: correo,
+      salt,
+      hash: await hashPw(clave, salt),
+      verified: verificado,
+      role: rol,
+      points: 0,
+      pending: 0,
+      ledger: [],
+      createdAt: now() - Math.floor(Math.random() * 60) * 864e5,
+      verify: null,
+    };
+    db.users.push(usuario);
+    return usuario;
+  }
+
+  function generarPedidosIniciales(usuariosCompra, generadorAleatorio) {
+    const elegirAlAzar = (lista) => lista[Math.floor(generadorAleatorio() * lista.length)];
+    const listaOrdenada = [...usuariosCompra].sort(() => generadorAleatorio() - 0.5);
+
+    listaOrdenada.forEach((usuario) => {
+      const articulos = [];
+      const cantidadLineas = 1 + Math.floor(generadorAleatorio() * 3);
+      for (let i = 0; i < cantidadLineas; i++) {
+        const producto = elegirAlAzar(db.products);
+        articulos.push({
+          pid: producto.id,
+          color: elegirAlAzar(producto.colors),
+          size: elegirAlAzar(producto.sizes),
+          design: producto.design,
+          text: generadorAleatorio() < 0.25 ? elegirAlAzar(TEXTOS_CAMISA_DEMO) : "",
+          qty: 1 + Math.floor(generadorAleatorio() * 3),
+        });
+      }
+      const metodoPago = elegirAlAzar(["card", "card", "transfer", "cod"]);
+      createOrder({
+        u: usuario,
+        items: articulos,
+        ts: now() - Math.floor(generadorAleatorio() * 55 + 1) * 864e5,
+        coupon: generadorAleatorio() < 0.2 ? "BIENVENIDO10" : "",
+        redeem: 0,
+        contact: {
+          name: usuario.name,
+          email: usuario.email,
+          phone: "9" + String(Math.floor(1e7 + generadorAleatorio() * 9e6)).slice(0, 7),
+          dept: elegirAlAzar(DEPTS),
+          city: elegirAlAzar(CIUDADES_DEMO),
+          addr: "Col. " + elegirAlAzar(COLONIAS_DEMO) + ", casa " + (1 + Math.floor(generadorAleatorio() * 90)),
+        },
+        pay: {
+          method: metodoPago,
+          brand: metodoPago === "card" ? elegirAlAzar(["Visa", "Mastercard"]) : "",
+          last4: metodoPago === "card" ? String(1000 + Math.floor(generadorAleatorio() * 8999)) : "",
+        },
+      });
+    });
+
+    for (let i = 0; i < 3; i++) {
+      const producto = elegirAlAzar(db.products);
+      createOrder({
+        u: null,
+        items: [{ pid: producto.id, color: producto.colors[0], size: "M", design: producto.design, text: "", qty: 1 + i }],
+        ts: now() - (i + 2) * 864e5 * 3,
+        coupon: "",
+        redeem: 0,
+        contact: {
+          name: "Invitado " + (i + 1),
+          email: "invitado" + (i + 1) + "@example.hn",
+          phone: "99998888",
+          dept: "Cortés",
+          city: "San Pedro Sula",
+          addr: "Barrio Guamilito, 3a calle",
+        },
+        pay: { method: "card", brand: "Visa", last4: "4242" },
+      });
+    }
+  }
+
   async function seed() {
     db = {
       v: 1,
@@ -263,111 +359,21 @@
       { code: "CATRACHO15", pct: 15, active: true },
       { code: "VENCIDO", pct: 20, active: false },
     ];
-    const mk = async (name, email, pw, verified, role) => {
-      const salt = rndHex(16);
-      const u = {
-        id: uid("u"),
-        name,
-        email,
-        salt,
-        hash: await hashPw(pw, salt),
-        verified,
-        role: role || "cliente",
-        points: 0,
-        pending: 0,
-        ledger: [],
-        createdAt: now() - Math.floor(Math.random() * 60) * 864e5,
-        verify: null,
-      };
-      db.users.push(u);
-      return u;
-    };
-    const demo = await mk("Oscar Demo", "demo@estampa.hn", "Demo1234!", true);
-    await mk("Admin Tienda", "admin@estampa.hn", "Admin1234!", true, "admin");
-    const nuevo = await mk("Nuevo Sin Verificar", "nuevo@estampa.hn", "Nuevo1234!", false);
-    const names = [
-      ["Carlos Mejía", 1],
-      ["María Fernanda López", 1],
-      ["José Reyes", 1],
-      ["Ana Sofía Paz", 1],
-      ["Luis Cárcamo", 0],
-      ["Daniela Ordóñez", 1],
-      ["Kevin Zelaya", 1],
-      ["Gabriela Banegas", 0],
-    ];
-    const mocks = [];
-    for (const [n, v] of names) {
-      mocks.push(
-        await mk(
-          n,
-          norm(n)
-            .replace(/[^a-z ]/g, "")
-            .split(" ")[0] + "@example.hn",
-          "Camisa123!",
-          !!v,
-        ),
-      );
+
+    const demo = await crearUsuarioSemilla("Oscar Demo", "demo@estampa.hn", "Demo1234!", true);
+    await crearUsuarioSemilla("Admin Tienda", "admin@estampa.hn", "Admin1234!", true, "admin");
+    const nuevo = await crearUsuarioSemilla("Nuevo Sin Verificar", "nuevo@estampa.hn", "Nuevo1234!", false);
+
+    const usuariosMock = [];
+    for (const [nombre, verificado] of USUARIOS_MOCK_INICIALES) {
+      const correo =
+        norm(nombre)
+          .replace(/[^a-z ]/g, "")
+          .split(" ")[0] + "@example.hn";
+      usuariosMock.push(await crearUsuarioSemilla(nombre, correo, "Camisa123!", verificado));
     }
-    const R = mulberry(42);
-    const rnd = (a) => a[Math.floor(R() * a.length)];
-    const people = [demo, demo, demo, demo, demo, ...mocks, ...mocks, nuevo];
-    people.sort(() => R() - 0.5);
-    people.forEach((u) => {
-      const items = [];
-      const nI = 1 + Math.floor(R() * 3);
-      for (let i = 0; i < nI; i++) {
-        const p = rnd(db.products);
-        items.push({
-          pid: p.id,
-          color: rnd(p.colors),
-          size: rnd(p.sizes),
-          design: p.design,
-          text: R() < 0.25 ? rnd(["Papá", "Team HN", "Catracho", "Los Pibes"]) : "",
-          qty: 1 + Math.floor(R() * 3),
-        });
-      }
-      const method = rnd(["card", "card", "transfer", "cod"]);
-      createOrder({
-        u,
-        items,
-        ts: now() - Math.floor(R() * 55 + 1) * 864e5,
-        coupon: R() < 0.2 ? "BIENVENIDO10" : "",
-        redeem: 0,
-        contact: {
-          name: u.name,
-          email: u.email,
-          phone: "9" + String(Math.floor(1e7 + R() * 9e6)).slice(0, 7),
-          dept: rnd(DEPTS),
-          city: rnd(["San Pedro Sula", "Tegucigalpa", "La Ceiba", "Choloma", "Comayagua"]),
-          addr:
-            "Col. " + rnd(["Las Brisas", "El Prado", "Los Álamos", "Kennedy"]) + ", casa " + (1 + Math.floor(R() * 90)),
-        },
-        pay: {
-          method,
-          brand: method === "card" ? rnd(["Visa", "Mastercard"]) : "",
-          last4: method === "card" ? String(1000 + Math.floor(R() * 8999)) : "",
-        },
-      });
-    });
-    for (let i = 0; i < 3; i++) {
-      const p = rnd(db.products);
-      createOrder({
-        u: null,
-        items: [{ pid: p.id, color: p.colors[0], size: "M", design: p.design, text: "", qty: 1 + i }],
-        ts: now() - (i + 2) * 864e5 * 3,
-        coupon: "",
-        redeem: 0,
-        contact: {
-          name: "Invitado " + (i + 1),
-          email: "invitado" + (i + 1) + "@example.hn",
-          phone: "99998888",
-          dept: "Cortés",
-          city: "San Pedro Sula",
-          addr: "Barrio Guamilito, 3a calle",
-        },
-        pay: { method: "card", brand: "Visa", last4: "4242" },
-      });
-    }
+
+    generarPedidosIniciales([demo, demo, demo, demo, demo, ...usuariosMock, ...usuariosMock, nuevo], mulberry(42));
     sendVerification(nuevo, true);
     db.mails.forEach((m) => (m.read = true));
     save();
