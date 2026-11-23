@@ -3,6 +3,7 @@
   /* ============ Utilidades ============ */
   const $ = (s, r = document) => r.querySelector(s),
     $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
   const esc = (s) =>
     String(s ?? "").replace(
       /[&<>"'`]/g,
@@ -676,64 +677,123 @@
     }
     return o;
   }
-  const luhn = (n) => {
-    n = String(n).replace(/\D/g, "");
-    if (n.length < 13 || n.length > 19) return false;
-    let s = 0,
-      d = false;
-    for (let i = n.length - 1; i >= 0; i--) {
-      let x = +n[i];
-      if (d) {
-        x *= 2;
-        if (x > 9) x -= 9;
-      }
-      s += x;
-      d = !d;
-    }
-    return s % 10 === 0;
+  const TARJETAS_PRUEBA = {
+    rechazada: "4000000000000002",
+    sinFondos: "4000000000009995",
   };
-  const brand = (n) =>
-    /^4/.test(n) ? "Visa" : /^(5[1-5]|2[2-7])/.test(n) ? "Mastercard" : /^3[47]/.test(n) ? "Amex" : "Tarjeta";
-  function expOk(e) {
-    const m = /^(\d{2})\/(\d{2})$/.exec(String(e || "").trim());
-    if (!m) return false;
-    const mm = +m[1],
-      yy = +m[2];
-    if (mm < 1 || mm > 12) return false;
-    return new Date(2000 + yy, mm, 1) > new Date();
+  const METODOS_PAGO_VALIDOS = ["card", "transfer", "cod"];
+
+  function validarNumeroTarjetaLuhn(numeroTarjeta) {
+    const digitos = String(numeroTarjeta).replace(/\D/g, "");
+    if (digitos.length < 13 || digitos.length > 19) return false;
+    let suma = 0;
+    let duplicar = false;
+    for (let i = digitos.length - 1; i >= 0; i--) {
+      let valor = +digitos[i];
+      if (duplicar) {
+        valor *= 2;
+        if (valor > 9) valor -= 9;
+      }
+      suma += valor;
+      duplicar = !duplicar;
+    }
+    return suma % 10 === 0;
   }
-  function validateContact(c) {
-    if (!c || String(c.name || "").trim().length < 2) return "Escribe tu nombre completo.";
-    if (!EMAIL.test(String(c.email || "").trim())) return "Correo electrónico inválido.";
-    const ph = String(c.phone || "").replace(/\D/g, "");
-    if (ph.length < 8 || ph.length > 11) return "Teléfono inválido (8 dígitos).";
-    if (!DEPTS.includes(c.dept)) return "Selecciona un departamento.";
-    if (String(c.city || "").trim().length < 2) return "Escribe tu ciudad.";
-    if (String(c.addr || "").trim().length < 5) return "Escribe una dirección de entrega más completa.";
+  const luhn = validarNumeroTarjetaLuhn;
+
+  function detectarMarcaTarjeta(numeroTarjeta) {
+    if (/^4/.test(numeroTarjeta)) return "Visa";
+    if (/^(5[1-5]|2[2-7])/.test(numeroTarjeta)) return "Mastercard";
+    if (/^3[47]/.test(numeroTarjeta)) return "Amex";
+    return "Tarjeta";
+  }
+  const brand = detectarMarcaTarjeta;
+
+  function validarFechaVencimiento(fechaTexto) {
+    const coincidencia = /^(\d{2})\/(\d{2})$/.exec(String(fechaTexto || "").trim());
+    if (!coincidencia) return false;
+    const mes = +coincidencia[1];
+    const anio = +coincidencia[2];
+    if (mes < 1 || mes > 12) return false;
+    return new Date(2000 + anio, mes, 1) > new Date();
+  }
+  const expOk = validarFechaVencimiento;
+
+  function validarDatosContacto(contacto) {
+    if (!contacto || String(contacto.name || "").trim().length < 2) return "Escribe tu nombre completo.";
+    if (!EMAIL.test(String(contacto.email || "").trim())) return "Correo electrónico inválido.";
+    const telefonoLimpio = String(contacto.phone || "").replace(/\D/g, "");
+    if (telefonoLimpio.length < 8 || telefonoLimpio.length > 11) return "Teléfono inválido (8 dígitos).";
+    if (!DEPTS.includes(contacto.dept)) return "Selecciona un departamento.";
+    if (String(contacto.city || "").trim().length < 2) return "Escribe tu ciudad.";
+    if (String(contacto.addr || "").trim().length < 5) return "Escribe una dirección de entrega más completa.";
     return "";
   }
-  async function checkout({ contact, pay, coupon, redeem }) {
-    const u = user();
-    if (!db.cart.length) return { ok: false, error: "Tu carrito está vacío." };
-    const ce = validateContact(contact);
-    if (ce) return { ok: false, error: ce };
-    if (!["card", "transfer", "cod"].includes(pay && pay.method))
-      return { ok: false, error: "Selecciona un método de pago." };
-    let payRec = { method: pay.method, brand: "", last4: "" };
-    if (pay.method === "card") {
-      const num = String(pay.card || "").replace(/\D/g, "");
-      if (!luhn(num)) return { ok: false, error: "Número de tarjeta inválido." };
-      if (!expOk(pay.exp)) return { ok: false, error: "Fecha de vencimiento inválida o vencida (MM/AA)." };
-      if (!/^\d{3,4}$/.test(String(pay.cvv || ""))) return { ok: false, error: "CVV inválido." };
-      if (String(pay.holder || "").trim().length < 2)
-        return { ok: false, error: "Escribe el nombre que aparece en la tarjeta." };
-      if (!FAST) await sleep(900);
-      if (num === "4000000000000002") return { ok: false, error: "Pago rechazado por el banco emisor." };
-      if (num === "4000000000009995") return { ok: false, error: "Fondos insuficientes." };
-      payRec = { method: "card", brand: brand(num), last4: num.slice(-4) };
+  const validateContact = validarDatosContacto;
+
+  async function procesarPagoTarjeta(datosPago) {
+    const numeroLimpio = String(datosPago.card || "").replace(/\D/g, "");
+    if (!validarNumeroTarjetaLuhn(numeroLimpio)) return { ok: false, error: "Número de tarjeta inválido." };
+    if (!validarFechaVencimiento(datosPago.exp)) {
+      return { ok: false, error: "Fecha de vencimiento inválida o vencida (MM/AA)." };
     }
-    const o = createOrder({
-      u,
+    if (!/^\d{3,4}$/.test(String(datosPago.cvv || ""))) return { ok: false, error: "CVV inválido." };
+    if (String(datosPago.holder || "").trim().length < 2) {
+      return { ok: false, error: "Escribe el nombre que aparece en la tarjeta." };
+    }
+    if (!FAST) await sleep(900);
+    if (numeroLimpio === TARJETAS_PRUEBA.rechazada) {
+      return { ok: false, error: "Pago rechazado por el banco emisor." };
+    }
+    if (numeroLimpio === TARJETAS_PRUEBA.sinFondos) {
+      return { ok: false, error: "Fondos insuficientes." };
+    }
+    return {
+      ok: true,
+      pago: { method: "card", brand: detectarMarcaTarjeta(numeroLimpio), last4: numeroLimpio.slice(-4) },
+    };
+  }
+
+  function construirTextoCorreoPedido(orden, usuario) {
+    const detallePuntos = usuario
+      ? usuario.verified
+        ? "Ganaste " + orden.earn + " puntos."
+        : "Tienes " + orden.earn + " puntos pendientes: verifica tu correo para activarlos."
+      : "Compra como invitado: crea una cuenta para acumular puntos en próximas compras.";
+    return (
+      "Gracias por tu compra, " +
+      orden.contact.name +
+      ".\nPedido: " +
+      orden.no +
+      "\nTotal: " +
+      Lps(orden.total) +
+      " (" +
+      orden.status +
+      ")\n" +
+      detallePuntos
+    );
+  }
+
+  async function checkout({ contact, pay, coupon, redeem }) {
+    const usuarioActual = user();
+    if (!db.cart.length) return { ok: false, error: "Tu carrito está vacío." };
+
+    const errorContacto = validarDatosContacto(contact);
+    if (errorContacto) return { ok: false, error: errorContacto };
+
+    if (!METODOS_PAGO_VALIDOS.includes(pay && pay.method)) {
+      return { ok: false, error: "Selecciona un método de pago." };
+    }
+
+    let registroPago = { method: pay.method, brand: "", last4: "" };
+    if (pay.method === "card") {
+      const resultadoPago = await procesarPagoTarjeta(pay);
+      if (!resultadoPago.ok) return resultadoPago;
+      registroPago = resultadoPago.pago;
+    }
+
+    const ordenCreada = createOrder({
+      u: usuarioActual,
       contact: {
         name: contact.name.trim(),
         email: contact.email.trim().toLowerCase(),
@@ -742,32 +802,20 @@
         city: contact.city.trim(),
         addr: contact.addr.trim(),
       },
-      pay: payRec,
+      pay: registroPago,
       coupon,
       redeem,
       items: db.cart,
     });
+
     db.cart = [];
     mail(
-      o.contact.email,
-      "Confirmación de pedido " + o.no,
-      "Gracias por tu compra, " +
-        o.contact.name +
-        ".\nPedido: " +
-        o.no +
-        "\nTotal: " +
-        Lps(o.total) +
-        " (" +
-        o.status +
-        ")\n" +
-        (u
-          ? u.verified
-            ? "Ganaste " + o.earn + " puntos."
-            : "Tienes " + o.earn + " puntos pendientes: verifica tu correo para activarlos."
-          : "Compra como invitado: crea una cuenta para acumular puntos en próximas compras."),
+      ordenCreada.contact.email,
+      "Confirmación de pedido " + ordenCreada.no,
+      construirTextoCorreoPedido(ordenCreada, usuarioActual),
     );
     save();
-    return { ok: true, order: o };
+    return { ok: true, order: ordenCreada };
   }
   const HAY = new WeakMap();
   function search(items, f) {
