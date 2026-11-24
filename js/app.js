@@ -1,6 +1,5 @@
 (() => {
   "use strict";
-  /* ============ Utilidades ============ */
   const $ = (s, r = document) => r.querySelector(s),
     $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
@@ -145,7 +144,6 @@
     setTimeout(() => t.remove(), 3200);
   }
 
-  /* ============ Base de datos (localStorage + semilla en el HTML) ============ */
   let db = null;
   function load() {
     try {
@@ -199,7 +197,6 @@
     }, 500);
   }
 
-  /* ============ Semilla (datos mock) ============ */
   const BASE = [
     [1, "Guara Roja", "Gráficas", 289, "🦜", "guacamaya ave honduras tropical", 4.8],
     [2, "Roatán Vibes", "Gráficas", 299, "🏝", "isla playa caribe verano", 4.7],
@@ -857,40 +854,75 @@
     save();
     return { ok: true, order: ordenCreada };
   }
-  const HAY = new WeakMap();
-  function search(items, f) {
-    const q = norm(f.q).split(/\s+/).filter(Boolean);
-    let r = items.filter((p) => {
-      if (f.cat && p.cat !== f.cat) return false;
-      if (f.color && !p.colors.includes(f.color)) return false;
-      if (f.size && !p.sizes.includes(f.size)) return false;
-      if (f.min !== "" && f.min != null && p.price < +f.min) return false;
-      if (f.max !== "" && f.max != null && p.price > +f.max) return false;
-      if (q.length) {
-        let h = HAY.get(p);
-        if (!h) {
-          h = norm(p.name + " " + p.cat + " " + p.tags);
-          HAY.set(p, h);
-        }
-        return q.every((w) => h.includes(w));
-      }
-      return true;
-    });
-    const s = f.sort || "rel";
-    if (s === "pa") r.sort((a, b) => a.price - b.price);
-    else if (s === "pd") r.sort((a, b) => b.price - a.price);
-    else if (s === "n") r.sort((a, b) => a.name.localeCompare(b.name, "es"));
-    else if (s === "r") r.sort((a, b) => b.rating - a.rating);
-    return r;
-  }
-  function ledgerOk(u) {
-    const sum = (t) => u.ledger.filter((l) => l.type === t).reduce((a, l) => a + l.pts, 0);
-    return (
-      u.points === sum("ganado") + sum("liberado") + sum("canjeado") && u.pending === sum("pendiente") - sum("liberado")
-    );
+  const INDICE_BUSQUEDA_PRODUCTOS = new WeakMap();
+  const ORDEN_CATALOGO = {
+    precioAscendente: "pa",
+    precioDescendente: "pd",
+    nombreAscendente: "n",
+    mejorValorados: "r",
+  };
+
+  function obtenerTextoIndexadoProducto(producto) {
+    let textoIndexado = INDICE_BUSQUEDA_PRODUCTOS.get(producto);
+    if (!textoIndexado) {
+      textoIndexado = norm(`${producto.name} ${producto.cat} ${producto.tags}`);
+      INDICE_BUSQUEDA_PRODUCTOS.set(producto, textoIndexado);
+    }
+    return textoIndexado;
   }
 
-  /* ============ Camiseta SVG ============ */
+  function coincideFiltrosProducto(producto, filtros, palabrasBusqueda) {
+    if (filtros.cat && producto.cat !== filtros.cat) return false;
+    if (filtros.color && !producto.colors.includes(filtros.color)) return false;
+    if (filtros.size && !producto.sizes.includes(filtros.size)) return false;
+    if (filtros.min !== "" && filtros.min != null && producto.price < Number(filtros.min)) return false;
+    if (filtros.max !== "" && filtros.max != null && producto.price > Number(filtros.max)) return false;
+
+    if (palabrasBusqueda.length > 0) {
+      const textoProducto = obtenerTextoIndexadoProducto(producto);
+      return palabrasBusqueda.every((palabra) => textoProducto.includes(palabra));
+    }
+    return true;
+  }
+
+  function ordenarProductos(productos, criterioOrden) {
+    if (criterioOrden === ORDEN_CATALOGO.precioAscendente) {
+      productos.sort((a, b) => a.price - b.price);
+    } else if (criterioOrden === ORDEN_CATALOGO.precioDescendente) {
+      productos.sort((a, b) => b.price - a.price);
+    } else if (criterioOrden === ORDEN_CATALOGO.nombreAscendente) {
+      productos.sort((a, b) => a.name.localeCompare(b.name, "es"));
+    } else if (criterioOrden === ORDEN_CATALOGO.mejorValorados) {
+      productos.sort((a, b) => b.rating - a.rating);
+    }
+    return productos;
+  }
+
+  function buscarYOrdenarProductos(productos, filtros) {
+    const palabrasBusqueda = norm(filtros.q).split(/\s+/).filter(Boolean);
+    const filtrados = productos.filter((producto) =>
+      coincideFiltrosProducto(producto, filtros, palabrasBusqueda),
+    );
+    return ordenarProductos(filtrados, filtros.sort || "rel");
+  }
+  const search = buscarYOrdenarProductos;
+
+  function verificarConsistenciaPuntos(usuario) {
+    const sumarMovimientosPorTipo = (tipo) =>
+      usuario.ledger
+        .filter((movimiento) => movimiento.type === tipo)
+        .reduce((acumulado, movimiento) => acumulado + movimiento.pts, 0);
+
+    const puntosCalculados =
+      sumarMovimientosPorTipo("ganado") +
+      sumarMovimientosPorTipo("liberado") +
+      sumarMovimientosPorTipo("canjeado");
+    const pendientesCalculados = sumarMovimientosPorTipo("pendiente") - sumarMovimientosPorTipo("liberado");
+
+    return usuario.points === puntosCalculados && usuario.pending === pendientesCalculados;
+  }
+  const ledgerOk = verificarConsistenciaPuntos;
+
   function shirtSVG(cn, design, text) {
     const c = COLORS[cn] || "#ccc",
       ink = lum(c) < 0.5 ? "#ffffff" : "#1d1b20",
@@ -920,7 +952,6 @@
     );
   }
 
-  /* ============ Estado de la interfaz ============ */
   const S = {
     view: "shop",
     f: { q: "", cat: "", color: "", size: "", min: "", max: "", sort: "rel" },
@@ -952,7 +983,6 @@
     mailAll: true,
   };
 
-  /* ============ Render ============ */
   const accountChip = (u) => "<span>👤 " + esc(u.name.split(" ")[0]) + "</span>";
   function cartCount() {
     return db.cart.reduce((a, c) => a + c.qty, 0);
@@ -1041,7 +1071,6 @@
     document.body.classList.toggle("lock", !!S.ov);
   }
 
-  /* ----- Tienda ----- */
   function shopView() {
     return (
       '<section class="hero"><div><h1>Camisas que cuentan tu historia</h1><p>Elige un diseño, cambia el color, agrega tu texto y estréna. <b>Envío gratis desde L 1,000</b> · Gana <b>1 punto por cada L 10</b> en compras.</p><button class="btn pri" data-act="scrollShop">Ver camisas</button></div><div>' +
@@ -1142,7 +1171,6 @@
     $("#more").innerHTML =
       r.length > S.shown ? '<button class="btn" data-act="more">Ver más (' + (r.length - S.shown) + ")</button>" : "";
   }
-  /* ----- Overlays ----- */
   function renderOverlay() {
     const o = $("#overlay");
     if (!S.ov) {
@@ -1305,7 +1333,6 @@
       "</div></div></div>"
     );
   }
-  /* ----- Autenticación ----- */
   function authView() {
     const reg = S.authMode === "register";
     return (
@@ -1405,7 +1432,6 @@
       "</table></div></div></div></div>"
     );
   }
-  /* ----- Checkout ----- */
   function checkoutView(u) {
     const c = S.co,
       T = totals(db.cart, { coupon: c.coupon, redeem: u ? +c.redeem : 0, u });
@@ -1584,7 +1610,6 @@
     );
   }
 
-  /* ============ QA: pruebas ============ */
   const GROUPS = [
     "Registro e inicio de sesión",
     "Adaptabilidad móvil",
@@ -2187,7 +2212,6 @@
         " KB";
   }
 
-  /* ============ Eventos ============ */
   function go(v) {
     S.view = v;
     S.err = "";
@@ -2600,7 +2624,6 @@
     ),
   );
 
-  /* ============ Inicio ============ */
   (async () => {
     if (!load()) await seed();
     db.settings = db.settings || { checks: {} };
