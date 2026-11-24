@@ -88,6 +88,7 @@
     puntosPorLempiraCanjeado: 10,
     porcentajeMaximoCanje: 0.5,
   };
+  const LIMITES_CARRITO = { cantidadMinima: 1, cantidadMaxima: 10 };
   const SESSION_MS = 30 * 60 * 1000;
   function rndHex(n) {
     const a = new Uint8Array(n);
@@ -379,8 +380,10 @@
     save();
   }
 
-  /* ============ Lógica de negocio ============ */
-  const P = (id) => db.products.find((p) => p.id === id);
+  function obtenerProductoPorId(idProducto) {
+    return db.products.find((producto) => producto.id === idProducto);
+  }
+  const P = obtenerProductoPorId;
   const user = () => {
     const s = db.session;
     if (!s) return null;
@@ -395,13 +398,15 @@
   function mail(to, subject, body, meta) {
     db.mails.push({ id: uid("m"), to, subject, body, ts: now(), read: false, meta: meta || null });
   }
-  function pwErr(p) {
-    p = p || "";
-    if (p.length < 8) return "La contraseña debe tener al menos 8 caracteres.";
-    if (p.length > 72) return "Contraseña demasiado larga.";
-    if (!/[a-z]/.test(p) || !/[A-Z]/.test(p) || !/\d/.test(p)) return "Usa mayúsculas, minúsculas y números.";
+  function validarContrasena(contrasena) {
+    contrasena = contrasena || "";
+    if (contrasena.length < 8) return "La contraseña debe tener al menos 8 caracteres.";
+    if (contrasena.length > 72) return "Contraseña demasiado larga.";
+    if (!/[a-z]/.test(contrasena) || !/[A-Z]/.test(contrasena) || !/\d/.test(contrasena))
+      return "Usa mayúsculas, minúsculas y números.";
     return "";
   }
+  const pwErr = validarContrasena;
   async function register({ name, email, password }) {
     name = String(name || "")
       .trim()
@@ -537,29 +542,58 @@
     return precioFinal;
   }
   const unitPrice = calcularPrecioUnitarioCamisa;
-  function cartAdd(it) {
-    const p = P(it.pid);
-    if (!p) return { ok: false, error: "Producto inexistente." };
-    if (!p.colors.includes(it.color)) return { ok: false, error: "Color no disponible." };
-    if (!p.sizes.includes(it.size)) return { ok: false, error: "Talla no disponible." };
-    const design = DESIGNS.some((d) => d[0] === (it.design || "")) ? it.design || "" : p.design;
-    const text = cleanText(it.text),
-      qty = Math.max(1, Math.min(10, parseInt(it.qty) || 1));
-    const ex = db.cart.find(
-      (c) => c.pid === p.id && c.color === it.color && c.size === it.size && c.design === design && c.text === text,
+  function agregarAlCarrito(itemSolicitado) {
+    const producto = obtenerProductoPorId(itemSolicitado.pid);
+    if (!producto) return { ok: false, error: "Producto inexistente." };
+    if (!producto.colors.includes(itemSolicitado.color)) return { ok: false, error: "Color no disponible." };
+    if (!producto.sizes.includes(itemSolicitado.size)) return { ok: false, error: "Talla no disponible." };
+
+    const disenoSeleccionado = DESIGNS.some((d) => d[0] === (itemSolicitado.design || ""))
+      ? itemSolicitado.design || ""
+      : producto.design;
+    const textoPersonalizado = cleanText(itemSolicitado.text);
+    const cantidad = Math.max(
+      LIMITES_CARRITO.cantidadMinima,
+      Math.min(
+        LIMITES_CARRITO.cantidadMaxima,
+        parseInt(itemSolicitado.qty) || LIMITES_CARRITO.cantidadMinima,
+      ),
     );
-    if (ex) ex.qty = Math.min(10, ex.qty + qty);
-    else db.cart.push({ pid: p.id, color: it.color, size: it.size, design, text, qty });
+
+    const lineaExistente = db.cart.find(
+      (linea) =>
+        linea.pid === producto.id &&
+        linea.color === itemSolicitado.color &&
+        linea.size === itemSolicitado.size &&
+        linea.design === disenoSeleccionado &&
+        linea.text === textoPersonalizado,
+    );
+
+    if (lineaExistente) {
+      lineaExistente.qty = Math.min(LIMITES_CARRITO.cantidadMaxima, lineaExistente.qty + cantidad);
+    } else {
+      db.cart.push({
+        pid: producto.id,
+        color: itemSolicitado.color,
+        size: itemSolicitado.size,
+        design: disenoSeleccionado,
+        text: textoPersonalizado,
+        qty: cantidad,
+      });
+    }
     save();
     return { ok: true };
   }
-  function cartSet(i, q) {
-    const c = db.cart[i];
-    if (!c) return;
-    c.qty = Math.max(0, Math.min(10, q));
-    if (c.qty === 0) db.cart.splice(i, 1);
+  const cartAdd = agregarAlCarrito;
+
+  function actualizarCantidadCarrito(indice, nuevaCantidad) {
+    const linea = db.cart[indice];
+    if (!linea) return;
+    linea.qty = Math.max(0, Math.min(LIMITES_CARRITO.cantidadMaxima, nuevaCantidad));
+    if (linea.qty === 0) db.cart.splice(indice, 1);
     save();
   }
+  const cartSet = actualizarCantidadCarrito;
   function cartLines(items) {
     return items
       .map((it) => {
