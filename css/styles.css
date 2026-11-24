@@ -840,3 +840,69 @@ details.grp .gb {
     transition: none !important;
   }
 }
+
+.btn.pri,
+#bottom button.entrar,
+button[type="submit"].btn.pri {
+  color: #ffffff;
+}
+
+.auth-grid,
+.grid2 {
+  display: flex;
+  align-items: stretch;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.auth-grid > .panel,
+.grid2 > .panel {
+  flex: 1 1 340px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 420px;
+}
+
+.auth-form input[type="email"],
+.auth-form input[type="password"],
+.auth-form input[type="text"],
+.panel input[type="email"],
+.panel input[type="password"] {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.95rem;
+}
+
+.auth-form button[type="submit"],
+.btn-entrar-form {
+  margin-top: 18px;
+  color: #ffffff;
+  border-radius: 8px;
+}
+
+.btn:not(.pri) {
+  border: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  color: #1e293b;
+  border-radius: 8px;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.btn:not(.pri):hover {
+  background-color: #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.top .btn:not(.pri) {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: transparent;
+  color: #ffffff;
+}
+
+.top .btn:not(.pri):hover {
+  background: rgba(255, 255, 255, 0.12);
+}
