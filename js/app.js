@@ -1412,8 +1412,42 @@
       '"><p><button class="btn pri" style="width:100%">Verificar</button></p></form><button class="btn ghost sm" data-act="resend">Reenviar código</button></div>'
     );
   }
-  function accountView(u) {
-    const os = db.orders.filter((o) => o.userId === u.id).sort((a, b) => b.ts - a.ts);
+  function renderizarBadgeEstadoOrden(estado) {
+    const claseEstado = estado === "Pagado" ? "ok" : "no";
+    return `<span class="tag ${claseEstado}">${esc(estado)}</span>`;
+  }
+
+  function renderizarTablaOrdenesCliente(ordenes) {
+    if (!ordenes.length) return '<div class="empty">Aún no tienes pedidos.</div>';
+    const filas = ordenes
+      .map(
+        (orden) =>
+          `<tr><td>${esc(orden.no)}</td><td>${fdate(orden.ts)}</td><td>${Lps(orden.total)}</td><td>${renderizarBadgeEstadoOrden(orden.status)}</td><td>+${orden.earn}${orden.usedPts ? " / −" + orden.usedPts : ""}</td></tr>`,
+      )
+      .join("");
+    return `<div class="scroll"><table class="tbl"><thead><tr><th>Pedido</th><th>Fecha</th><th>Total</th><th>Pago</th><th>Puntos</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+  }
+
+  function renderizarHistorialPuntos(movimientos) {
+    const movimientosRecientes = movimientos.slice(-8).reverse();
+    const filas = movimientosRecientes.length
+      ? movimientosRecientes
+          .map(
+            (movimiento) =>
+              `<tr><td>${fdate(movimiento.ts)}</td><td>${esc(movimiento.type)}</td><td>${movimiento.pts > 0 ? "+" : ""}${movimiento.pts}</td><td>${esc(movimiento.ref)}</td></tr>`,
+          )
+          .join("")
+      : '<tr><td colspan="4" class="mut">Sin movimientos</td></tr>';
+    return `<div class="scroll"><table class="tbl"><thead><tr><th>Fecha</th><th>Tipo</th><th>Pts</th><th>Ref.</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+  }
+
+  function accountView(u = user()) {
+    if (!u) return authView();
+    const misOrdenes = db.orders.filter((orden) => orden.userId === u.id).sort((a, b) => b.ts - a.ts);
+    const alertaVerificacion = u.verified
+      ? ""
+      : '<div class="alert warn">Verifica tu correo para activar tus puntos y canjearlos. <button class="btn sm" data-act="nav" data-v="verify">Verificar ahora</button></div>';
+
     return (
       '<div class="two" style="margin-top:20px"><div><div class="panel"><h2>Hola, ' +
       esc(u.name) +
@@ -1423,35 +1457,9 @@
       (u.verified ? '<span class="tag ok">Correo verificado</span>' : '<span class="tag no">Sin verificar</span>') +
       (u.role === "admin" ? ' · <span class="tag ok">Admin</span>' : "") +
       "</p>" +
-      (u.verified
-        ? ""
-        : '<div class="alert warn">Verifica tu correo para activar tus puntos y canjearlos. <button class="btn sm" data-act="nav" data-v="verify">Verificar ahora</button></div>') +
+      alertaVerificacion +
       '<button class="btn" data-act="logout">Cerrar sesión</button></div>' +
-      '<div class="panel"><h3>Mis pedidos (' +
-      os.length +
-      ")</h3>" +
-      (os.length
-        ? '<div class="scroll"><table class="tbl"><tr><th>Pedido</th><th>Fecha</th><th>Total</th><th>Pago</th><th>Puntos</th></tr>' +
-          os
-            .map(
-              (o) =>
-                "<tr><td>" +
-                esc(o.no) +
-                "</td><td>" +
-                fdate(o.ts) +
-                "</td><td>" +
-                Lps(o.total) +
-                "</td><td>" +
-                esc(o.status) +
-                "</td><td>+" +
-                o.earn +
-                (o.usedPts ? " / −" + o.usedPts : "") +
-                "</td></tr>",
-            )
-            .join("") +
-          "</table></div>"
-        : '<div class="empty">Aún no tienes pedidos.</div>') +
-      "</div></div>" +
+      `<div class="panel"><h3>Mis pedidos (${misOrdenes.length})</h3>${renderizarTablaOrdenesCliente(misOrdenes)}</div></div>` +
       '<div><div class="panel"><h3>Mis puntos</h3><div style="font-size:2.2rem;font-weight:800;color:var(--ac)">' +
       u.points +
       ' <span style="font-size:1rem" class="mut">pts</span></div><div class="mut sm">≈ ' +
@@ -1459,25 +1467,8 @@
       " de descuento · Pendientes: " +
       u.pending +
       '</div><p class="sm mut">1 punto por cada L 10 · 100 puntos = L 10 · Máx. 50% del pedido.</p>' +
-      '<div class="scroll"><table class="tbl"><tr><th>Fecha</th><th>Tipo</th><th>Pts</th><th>Ref.</th></tr>' +
-      (u.ledger
-        .slice(-8)
-        .reverse()
-        .map(
-          (l) =>
-            "<tr><td>" +
-            fdate(l.ts) +
-            "</td><td>" +
-            esc(l.type) +
-            "</td><td>" +
-            (l.pts > 0 ? "+" : "") +
-            l.pts +
-            "</td><td>" +
-            esc(l.ref) +
-            "</td></tr>",
-        )
-        .join("") || '<tr><td colspan="4" class="mut">Sin movimientos</td></tr>') +
-      "</table></div></div></div></div>"
+      renderizarHistorialPuntos(u.ledger) +
+      "</div></div></div>"
     );
   }
   function checkoutView(u) {
@@ -2129,68 +2120,51 @@
     );
     return { p, f };
   }
+  function renderizarGrupoResultadoQa(nombreGrupo, indice) {
+    const grupo = indice + 1;
+    const resultado = S.qa[grupo];
+    const fallos = resultado ? resultado.items.filter((item) => item.k === "fail").length : 0;
+    let estadoGrupo = '<span class="tag no">pendiente</span>';
+    if (resultado) {
+      estadoGrupo = fallos
+        ? `<span class="tag bad">${fallos} fallo(s)</span>`
+        : '<span class="tag ok">OK</span>';
+    }
+
+    const revisionesManuales = MANUAL[indice]
+      .map((revision, indiceRevision) => {
+        const id = grupo + "-" + indiceRevision;
+        const marcado = db.settings.checks[id] ? "checked" : "";
+        return `<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:4px 0"><input type="checkbox" style="width:20px;min-height:20px;margin-top:2px" data-in="chk" data-id="${id}" ${marcado}><span>${esc(revision)}</span></label>`;
+      })
+      .join("");
+
+    let contenidoResultado = "";
+    if (resultado) {
+      contenidoResultado =
+        resultado.items.map((item) => `<div class="res ${item.k}"><span>${esc(item.m)}</span></div>`).join("") +
+        `<div class="mut sm">${resultado.ms.toFixed(0)} ms</div>`;
+    }
+
+    const abierto = resultado ? "open" : "";
+    return `<details class="grp" ${abierto}><summary>${grupo}. ${esc(nombreGrupo)} ${estadoGrupo} <button class="btn sm" data-act="runGroup" data-g="${grupo}">Ejecutar</button></summary><div class="gb">${contenidoResultado}<h3 style="margin-top:12px">Revisión manual</h3>${revisionesManuales}</div></details>`;
+  }
+
   function qaResultsHtml() {
     const sm = qaSummary();
-    return (
-      '<div class="alert ' +
-      (sm.f ? "err" : sm.p ? "ok" : "info") +
-      '"><b>' +
-      (Object.keys(S.qa).length
-        ? sm.f
-          ? sm.f + " verificación(es) fallida(s)"
-          : "Todo en verde"
-        : "Aún no se ha ejecutado") +
-      "</b> · " +
-      sm.p +
-      " correctas" +
-      (S.qaRunning ? " · ejecutando…" : "") +
-      "</div>" +
-      GROUPS.map((n, i) => {
-        const g = i + 1,
-          r = S.qa[g];
-        const fail = r ? r.items.filter((x) => x.k === "fail").length : 0;
-        const chk = MANUAL[i]
-          .map((m, j) => {
-            const id = g + "-" + j;
-            return (
-              '<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:4px 0"><input type="checkbox" style="width:20px;min-height:20px;margin-top:2px" data-in="chk" data-id="' +
-              id +
-              '" ' +
-              (db.settings.checks[id] ? "checked" : "") +
-              "><span>" +
-              esc(m) +
-              "</span></label>"
-            );
-          })
-          .join("");
-        return (
-          '<details class="grp" ' +
-          (r ? "open" : "") +
-          "><summary>" +
-          g +
-          ". " +
-          esc(n) +
-          " " +
-          (r
-            ? fail
-              ? '<span class="tag bad">' + fail + " fallo(s)</span>"
-              : '<span class="tag ok">OK</span>'
-            : '<span class="tag no">pendiente</span>') +
-          ' <button class="btn sm" data-act="runGroup" data-g="' +
-          g +
-          '">Ejecutar</button></summary><div class="gb">' +
-          (r
-            ? r.items.map((x) => '<div class="res ' + x.k + '"><span>' + esc(x.m) + "</span></div>").join("") +
-              '<div class="mut sm">' +
-              r.ms.toFixed(0) +
-              " ms</div>"
-            : "") +
-          '<h3 style="margin-top:12px">Revisión manual</h3>' +
-          chk +
-          "</div></details>"
-        );
-      }).join("")
-    );
+    const gruposEjecutados = Object.keys(S.qa).length;
+    let claseResumen = "info";
+    let textoResumen = "Aún no se ha ejecutado";
+    if (gruposEjecutados > 0) {
+      claseResumen = sm.f ? "err" : "ok";
+      textoResumen = sm.f ? sm.f + " verificación(es) fallida(s)" : "Todo en verde";
+    }
+    const indicadorEjecucion = S.qaRunning ? " · ejecutando…" : "";
+    const filasGrupos = GROUPS.map((nombreGrupo, indice) =>
+      renderizarGrupoResultadoQa(nombreGrupo, indice),
+    ).join("");
+
+    return `<div class="alert ${claseResumen}"><b>${textoResumen}</b> · ${sm.p} correctas${indicadorEjecucion}</div>${filasGrupos}`;
   }
   function qaView() {
     const u = user();
