@@ -3,19 +3,32 @@
   const $ = (s, r = document) => r.querySelector(s),
     $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-  const esc = (s) =>
-    String(s ?? "").replace(
-      /[&<>"'`]/g,
-      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "`": "&#96;" })[c],
-    );
-  const Lps = (n) => "L " + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatearLempiras = (monto) =>
+    "L " +
+    Number(monto || 0).toLocaleString("es-HN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  const Lps = formatearLempiras;
+
+  const MAPA_ESCAPE_HTML = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  };
+  const escaparHtml = (texto) => String(texto ?? "").replace(/[&<>"']/g, (caracter) => MAPA_ESCAPE_HTML[caracter]);
+  const esc = escaparHtml;
+
   const now = () => Date.now(),
     r2 = (n) => Math.round(n * 100) / 100;
-  const norm = (s) =>
-    String(s || "")
+  const normalizarTexto = (texto) =>
+    String(texto || "")
+      .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
+      .replace(/[\u0300-\u036f]/g, "");
+  const norm = normalizarTexto;
   const fdate = (t) => new Date(t).toLocaleString("es-HN", { dateStyle: "medium", timeStyle: "short" });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let FAST = false,
@@ -89,25 +102,28 @@
   };
   const LIMITES_CARRITO = { cantidadMinima: 1, cantidadMaxima: 10 };
   const SESSION_MS = 30 * 60 * 1000;
-  function rndHex(n) {
-    const a = new Uint8Array(n);
-    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
-    else a.forEach((_, i) => (a[i] = Math.random() * 256));
-    return hex(a);
+  function generarHexAleatorio(cantidadBytes) {
+    const bytes = new Uint8Array(cantidadBytes);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+    else bytes.forEach((_, indice) => (bytes[indice] = Math.random() * 256));
+    return hex(bytes);
   }
-  function code6() {
+  const rndHex = generarHexAleatorio;
+
+  function generarCodigoVerificacion() {
     if (window.crypto && crypto.getRandomValues) {
-      const a = new Uint32Array(1);
-      crypto.getRandomValues(a);
-      return String(100000 + (a[0] % 900000));
+      const bytes = new Uint32Array(1);
+      crypto.getRandomValues(bytes);
+      return String(100000 + (bytes[0] % 900000));
     }
     return String(100000 + Math.floor(Math.random() * 900000));
   }
+  const code6 = generarCodigoVerificacion;
   const hex = (b) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
   const enc = new TextEncoder();
-  async function hashPw(pw, salt) {
+  async function generarHashContrasena(contrasena, salt) {
     if (window.crypto && crypto.subtle) {
-      const k = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveBits"]);
+      const k = await crypto.subtle.importKey("raw", enc.encode(contrasena), "PBKDF2", false, ["deriveBits"]);
       const bits = await crypto.subtle.deriveBits(
         { name: "PBKDF2", hash: "SHA-256", salt: enc.encode(salt), iterations: 60000 },
         k,
@@ -116,7 +132,7 @@
       return "pbkdf2$" + hex(bits);
     }
     let a = 2166136261,
-      s = salt + pw,
+      s = salt + contrasena,
       out = "";
     for (let r = 0; r < 8; r++) {
       for (let i = 0; i < s.length; i++) {
@@ -127,6 +143,7 @@
     }
     return "weak$" + out;
   }
+  const hashPw = generarHashContrasena;
   function lum(h) {
     const n = parseInt(h.slice(1), 16),
       r = (n >> 16) & 255,
@@ -665,54 +682,85 @@
     };
   }
   const totals = calcularDesglosePedido;
-  function createOrder({ u, contact, pay, coupon, redeem, items, ts }) {
-    const T = totals(items, { coupon, redeem, u });
-    const o = {
+  function registrarCanjePuntos(usuario, puntosCanjeados, numeroOrden, fechaMarca) {
+    if (!usuario || puntosCanjeados <= 0) return;
+    usuario.points -= puntosCanjeados;
+    usuario.ledger.push({
+      ts: fechaMarca,
+      type: "canjeado",
+      pts: -puntosCanjeados,
+      ref: numeroOrden,
+    });
+  }
+
+  function registrarPuntosGanados(usuario, puntosGanados, numeroOrden, fechaMarca) {
+    if (!usuario || puntosGanados <= 0) return;
+    if (usuario.verified) {
+      usuario.points += puntosGanados;
+      usuario.ledger.push({
+        ts: fechaMarca,
+        type: "ganado",
+        pts: puntosGanados,
+        ref: numeroOrden,
+      });
+    } else {
+      usuario.pending += puntosGanados;
+      usuario.ledger.push({
+        ts: fechaMarca,
+        type: "pendiente",
+        pts: puntosGanados,
+        ref: numeroOrden,
+      });
+    }
+  }
+
+  function createOrder({ u: usuario, contact, pay, coupon, redeem, items, ts }) {
+    const fechaOrden = ts || now();
+    const desglose = calcularDesglosePedido(items, {
+      coupon,
+      redeem,
+      u: usuario,
+    });
+    const numeroOrden = "EHN-" + ++db.seq;
+
+    const lineasOrden = items.map((item) => {
+      const producto = obtenerProductoPorId(item.pid);
+      return {
+        pid: item.pid,
+        name: producto ? producto.name : item.pid,
+        color: item.color,
+        size: item.size,
+        design: item.design,
+        text: item.text || "",
+        qty: item.qty,
+        unit: producto ? calcularPrecioUnitarioCamisa(producto, item) : 0,
+      };
+    });
+
+    const orden = {
       id: uid("o"),
-      no: "EHN-" + ++db.seq,
-      ts: ts || now(),
-      userId: u ? u.id : null,
-      guest: !u,
+      no: numeroOrden,
+      ts: fechaOrden,
+      userId: usuario ? usuario.id : null,
+      guest: !usuario,
       contact,
-      items: T.lines.map((l) => ({
-        pid: l.pid,
-        name: l.p.name,
-        color: l.color,
-        size: l.size,
-        design: l.design,
-        text: l.text,
-        qty: l.qty,
-        unit: l.unit,
-      })),
-      subtotal: T.subtotal,
-      cd: T.cd,
-      coupon: T.coupon ? T.coupon.code : null,
-      usedPts: T.usedPts,
-      pr: T.pr,
-      ship: T.ship,
-      total: T.total,
-      isv: T.isv,
-      earn: u ? T.earn : 0,
+      items: lineasOrden,
+      subtotal: desglose.subtotal,
+      cd: desglose.cd,
+      coupon: desglose.coupon ? desglose.coupon.code : null,
+      usedPts: desglose.usedPts,
+      pr: desglose.pr,
+      ship: desglose.ship,
+      total: desglose.total,
+      isv: desglose.isv,
+      earn: usuario ? desglose.earn : 0,
       pay,
       status: pay.method === "card" ? "Pagado" : pay.method === "transfer" ? "Pendiente de pago" : "Contra entrega",
     };
-    db.orders.push(o);
-    if (u) {
-      if (T.usedPts) {
-        u.points -= T.usedPts;
-        u.ledger.push({ ts: o.ts, type: "canjeado", pts: -T.usedPts, ref: o.no });
-      }
-      if (T.earn > 0) {
-        if (u.verified) {
-          u.points += T.earn;
-          u.ledger.push({ ts: o.ts, type: "ganado", pts: T.earn, ref: o.no });
-        } else {
-          u.pending += T.earn;
-          u.ledger.push({ ts: o.ts, type: "pendiente", pts: T.earn, ref: o.no });
-        }
-      }
-    }
-    return o;
+    db.orders.push(orden);
+    registrarCanjePuntos(usuario, desglose.usedPts, numeroOrden, fechaOrden);
+    registrarPuntosGanados(usuario, desglose.earn, numeroOrden, fechaOrden);
+    return orden;
   }
   const TARJETAS_PRUEBA = {
     rechazada: "4000000000000002",
