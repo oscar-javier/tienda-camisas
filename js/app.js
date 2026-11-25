@@ -393,6 +393,7 @@
     ];
 
     const demo = await crearUsuarioSemilla("Oscar Demo", "demo@estampa.hn", "Demo1234!", true);
+    await crearUsuarioSemilla("Tester QA", "tester@estampahn.hn", "Camisa123!", true, "tester");
     await crearUsuarioSemilla("Admin Tienda", "admin@estampa.hn", "Admin1234!", true, "admin");
     const nuevo = await crearUsuarioSemilla("Nuevo Sin Verificar", "nuevo@estampa.hn", "Nuevo1234!", false);
 
@@ -425,7 +426,9 @@
     }
     return db.users.find((u) => u.id === s.uid) || null;
   };
-  const esAdministrador = (usuario = user()) => Boolean(usuario && usuario.role === "admin");
+  const esAdministrador = (usuario = user()) =>
+    window.perfilesAcceso.tienePermiso(usuario, "puedeAdministrar");
+  const puedeAccederQa = (usuario = user()) => window.perfilesAcceso.tienePermiso(usuario, "puedeVerQa");
   function mail(to, subject, body, meta) {
     db.mails.push({ id: uid("m"), to, subject, body, ts: now(), read: false, meta: meta || null });
   }
@@ -1056,7 +1059,7 @@
     return db.mails.filter((m) => !m.read).length;
   }
   function renderizarBotonesSesion(usuario) {
-    const enlaceQa = esAdministrador(usuario)
+    const enlaceQa = puedeAccederQa(usuario)
       ? '<button class="btn" data-act="nav" data-v="qa">🧪 Pruebas QA</button>'
       : "";
     return (
@@ -1071,7 +1074,7 @@
     return '<span class="badge cartN">' + (cantidad || "") + "</span>";
   }
   function renderizarNavegacionMovil(usuario) {
-    const puedeVerQa = esAdministrador(usuario);
+    const puedeVerQa = puedeAccederQa(usuario);
     const opcionesMovil = [
       ["shop", "🛍", "Tienda"],
       ["cart", "🛒", "Carrito"],
@@ -1129,7 +1132,7 @@
     else if (v === "done") h = doneView();
     else if (v === "account") h = u ? accountView(u) : authView();
     else if (v === "qa") {
-      if (!esAdministrador(u)) {
+      if (!puedeAccederQa(u)) {
         S.view = "shop";
         h = shopView();
       } else {
@@ -1441,7 +1444,7 @@
         ? '<form class="auth-form" data-form="register" novalidate><label for="rn">Nombre completo</label><input id="rn" name="name" autocomplete="name" maxlength="60" required><label for="re">Correo electrónico</label><input id="re" name="email" type="email" autocomplete="email" required><label for="rp">Contraseña</label><input id="rp" name="password" type="password" autocomplete="new-password" required><div class="mut sm">Mínimo 8 caracteres, con mayúscula, minúscula y número.</div><button type="submit" class="btn pri btn-submit">Crear cuenta</button></form>'
         : '<form class="auth-form" data-form="login" novalidate><label for="le">Correo electrónico</label><input id="le" name="email" type="email" autocomplete="username" required><label for="lp">Contraseña</label><input id="lp" name="password" type="password" autocomplete="current-password" required><button type="submit" class="btn pri btn-entrar-form">Entrar</button></form>') +
       '</div><div class="panel auth-panel"><h3>Cuentas de prueba</h3><p class="mut sm">Toca para iniciar sesión al instante.</p><div class="quick-list">' +
-      '<button class="btn quick-btn" data-act="quick" data-e="demo@estampa.hn" data-p="Demo1234!">Cliente verificado (con puntos)</button><button class="btn quick-btn" data-act="quick" data-e="nuevo@estampa.hn" data-p="Nuevo1234!">Cliente sin verificar</button><button class="btn quick-btn" data-act="quick" data-e="admin@estampa.hn" data-p="Admin1234!">Administrador</button></div>' +
+      '<button class="btn quick-btn" data-act="quick" data-e="demo@estampa.hn" data-p="Demo1234!">Cliente</button><button class="btn quick-btn" data-act="quick" data-e="tester@estampahn.hn" data-p="Camisa123!">Tester QA</button><button class="btn quick-btn" data-act="quick" data-e="admin@estampa.hn" data-p="Admin1234!">Administrador</button><button class="btn quick-btn" data-act="quick" data-e="nuevo@estampa.hn" data-p="Nuevo1234!">Cliente sin verificar</button></div>' +
       '<p class="mut sm" style="margin-top:12px">Contraseña de los demás usuarios mock: <code>Camisa123!</code></p></div></div>'
     );
   }
@@ -1491,6 +1494,23 @@
   function accountView(u = user()) {
     if (!u) return authView();
     const misOrdenes = db.orders.filter((orden) => orden.userId === u.id).sort((a, b) => b.ts - a.ts);
+    const selectorPerfil = window.perfilesAcceso.tienePermiso(u, "puedeCambiarPerfil")
+      ? '<div><label for="profile">Perfil de prueba</label><select id="profile" data-in="profile">' +
+        window.perfilesAcceso
+          .listarDisponibles()
+          .map(
+            (perfil) =>
+              '<option value="' +
+              esc(perfil.rol) +
+              '"' +
+              (u.role === perfil.rol ? " selected" : "") +
+              ">" +
+              esc(perfil.etiqueta) +
+              "</option>",
+          )
+          .join("") +
+        "</select></div>"
+      : "";
     const alertaVerificacion = u.verified
       ? ""
       : '<div class="alert warn">Verifica tu correo para activar tus puntos y canjearlos. <button class="btn sm" data-act="nav" data-v="verify">Verificar ahora</button></div>';
@@ -1504,6 +1524,7 @@
       (u.verified ? '<span class="tag ok">Correo verificado</span>' : '<span class="tag no">Sin verificar</span>') +
       (u.role === "admin" ? ' · <span class="tag ok">Admin</span>' : "") +
       "</p>" +
+      selectorPerfil +
       alertaVerificacion +
       '<button class="btn" data-act="logout">Cerrar sesión</button></div>' +
       `<div class="panel"><h3>Mis pedidos (${misOrdenes.length})</h3>${renderizarTablaOrdenesCliente(misOrdenes)}</div></div>` +
@@ -2269,6 +2290,10 @@
   }
   function qaView() {
     const u = user();
+    if (!puedeAccederQa(u)) {
+      S.view = "shop";
+      return shopView();
+    }
     return (
       '<h2 style="margin-top:20px">🧪 Panel de pruebas (QA)</h2><p class="mut">Las pruebas automáticas se ejecutan sobre una copia: al terminar, tus datos reales se restauran.</p>' +
       '<div class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="runAll">▶ Ejecutar las 10 pruebas</button></div></div>' +
@@ -2301,7 +2326,7 @@
           (u) =>
             "<tr><td>" +
             esc(u.name) +
-            (u.role === "admin" ? " ★" : "") +
+            (esAdministrador(u) ? " ★" : "") +
             "</td><td>" +
             esc(u.email) +
             "</td><td>" +
@@ -2346,8 +2371,8 @@
     nav: (el) => {
       let v = el.dataset.v;
       if (v === "account" && !user()) v = "auth";
-      if (v === "qa" && !esAdministrador()) {
-        toast("Acceso restringido a administradores", "err");
+      if (v === "qa" && !puedeAccederQa()) {
+        toast("Acceso restringido a perfiles QA", "err");
         v = "shop";
       }
       go(v);
@@ -2704,9 +2729,31 @@
     return true;
   }
 
+  function actualizarPerfilAcceso(elemento, evento) {
+    if (elemento.dataset.in !== "profile" || evento.type !== "change") return false;
+    const usuario = user();
+    if (!window.perfilesAcceso.tienePermiso(usuario, "puedeCambiarPerfil")) {
+      toast("No tienes permiso para cambiar de perfil.", "err");
+      renderAll();
+      return true;
+    }
+    const perfil = window.perfilesAcceso.listarDisponibles().find((opcion) => opcion.rol === elemento.value);
+    if (!perfil) {
+      toast("Perfil no válido.", "err");
+      renderAll();
+      return true;
+    }
+    usuario.role = perfil.rol;
+    save();
+    toast("Perfil cambiado a " + perfil.etiqueta, "ok");
+    renderAll();
+    return true;
+  }
+
   function onInput(evento) {
     const elemento = evento.target && evento.target.closest("[data-in]");
     if (!elemento) return;
+    if (actualizarPerfilAcceso(elemento, evento)) return;
     if (actualizarFiltroCatalogo(elemento)) return;
     if (actualizarPersonalizacionProducto(elemento)) return;
     if (actualizarCampoCheckout(elemento)) return;
