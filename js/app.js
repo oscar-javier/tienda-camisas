@@ -161,7 +161,8 @@
     setTimeout(() => t.remove(), 3200);
   }
 
-  let db = null;
+  let db = null,
+    APP_READY = false;
   let advertenciaAlmacenamiento = "";
 
   function clasificarErrorAlmacenamiento(error) {
@@ -1028,6 +1029,7 @@
     modal: null,
     filtersOpen: false,
     authMode: "login",
+    accessRole: null,
     err: "",
     busy: false,
     co: {
@@ -1131,6 +1133,8 @@
     else if (v === "checkout") h = checkoutView(u);
     else if (v === "done") h = doneView();
     else if (v === "account") h = u ? accountView(u) : authView();
+    else if (v === "access") h = accessView(S.accessRole);
+    else if (v === "admin") h = adminView(u);
     else if (v === "qa") {
       if (!puedeAccederQa(u)) {
         S.view = "shop";
@@ -1434,7 +1438,7 @@
   function authView() {
     const reg = S.authMode === "register";
     return (
-      '<div class="auth-grid"><div class="panel auth-panel"><div class="chips" style="margin-bottom:10px"><button class="chip ' +
+      '<div class="panel auth-panel" style="margin:20px auto;max-width:520px"><div class="chips" style="margin-bottom:10px"><button class="chip ' +
       (!reg ? "on" : "") +
       '" data-act="authMode" data-v="login">Iniciar sesión</button><button class="chip ' +
       (reg ? "on" : "") +
@@ -1443,9 +1447,18 @@
       (reg
         ? '<form class="auth-form" data-form="register" novalidate><label for="rn">Nombre completo</label><input id="rn" name="name" autocomplete="name" maxlength="60" required><label for="re">Correo electrónico</label><input id="re" name="email" type="email" autocomplete="email" required><label for="rp">Contraseña</label><input id="rp" name="password" type="password" autocomplete="new-password" required><div class="mut sm">Mínimo 8 caracteres, con mayúscula, minúscula y número.</div><button type="submit" class="btn pri btn-submit">Crear cuenta</button></form>'
         : '<form class="auth-form" data-form="login" novalidate><label for="le">Correo electrónico</label><input id="le" name="email" type="email" autocomplete="username" required><label for="lp">Contraseña</label><input id="lp" name="password" type="password" autocomplete="current-password" required><button type="submit" class="btn pri btn-entrar-form">Entrar</button></form>') +
-      '</div><div class="panel auth-panel"><h3>Cuentas de prueba</h3><p class="mut sm">Toca para iniciar sesión al instante.</p><div class="quick-list">' +
-      '<button class="btn quick-btn" data-act="quick" data-e="demo@estampa.hn" data-p="Demo1234!">Cliente</button><button class="btn quick-btn" data-act="quick" data-e="tester@estampahn.hn" data-p="Camisa123!">Tester QA</button><button class="btn quick-btn" data-act="quick" data-e="admin@estampa.hn" data-p="Admin1234!">Administrador</button><button class="btn quick-btn" data-act="quick" data-e="nuevo@estampa.hn" data-p="Nuevo1234!">Cliente sin verificar</button></div>' +
-      '<p class="mut sm" style="margin-top:12px">Contraseña de los demás usuarios mock: <code>Camisa123!</code></p></div></div>'
+      "</div>"
+    );
+  }
+  function accessView(rol) {
+    const perfil = window.perfilesAcceso.obtener(rol);
+    return (
+      '<div class="panel auth-panel" style="margin:20px auto;max-width:520px"><h2>' +
+      "Acceso " +
+      esc(perfil.etiqueta) +
+      "</h2><p class=\"mut\">Ingresa con tu cuenta autorizada para continuar.</p>" +
+      (S.err ? '<div class="alert err" role="alert">' + esc(S.err) + "</div>" : "") +
+      '<form class="auth-form" data-form="restrictedAccess" novalidate><label for="accessEmail">Correo electrónico</label><input id="accessEmail" name="email" type="email" autocomplete="username" required><label for="accessPassword">Contraseña</label><input id="accessPassword" name="password" type="password" autocomplete="current-password" required><button type="submit" class="btn pri">Entrar</button></form><button class="btn ghost sm" style="margin-top:10px" data-act="backToShop">Volver a la tienda</button></div>'
     );
   }
   function verifyView(u) {
@@ -1494,23 +1507,6 @@
   function accountView(u = user()) {
     if (!u) return authView();
     const misOrdenes = db.orders.filter((orden) => orden.userId === u.id).sort((a, b) => b.ts - a.ts);
-    const selectorPerfil = window.perfilesAcceso.tienePermiso(u, "puedeCambiarPerfil")
-      ? '<div><label for="profile">Perfil de prueba</label><select id="profile" data-in="profile">' +
-        window.perfilesAcceso
-          .listarDisponibles()
-          .map(
-            (perfil) =>
-              '<option value="' +
-              esc(perfil.rol) +
-              '"' +
-              (u.role === perfil.rol ? " selected" : "") +
-              ">" +
-              esc(perfil.etiqueta) +
-              "</option>",
-          )
-          .join("") +
-        "</select></div>"
-      : "";
     const alertaVerificacion = u.verified
       ? ""
       : '<div class="alert warn">Verifica tu correo para activar tus puntos y canjearlos. <button class="btn sm" data-act="nav" data-v="verify">Verificar ahora</button></div>';
@@ -1524,7 +1520,6 @@
       (u.verified ? '<span class="tag ok">Correo verificado</span>' : '<span class="tag no">Sin verificar</span>') +
       (u.role === "admin" ? ' · <span class="tag ok">Admin</span>' : "") +
       "</p>" +
-      selectorPerfil +
       alertaVerificacion +
       '<button class="btn" data-act="logout">Cerrar sesión</button></div>' +
       `<div class="panel"><h3>Mis pedidos (${misOrdenes.length})</h3>${renderizarTablaOrdenesCliente(misOrdenes)}</div></div>` +
@@ -1537,6 +1532,37 @@
       '</div><p class="sm mut">1 punto por cada L 10 · 100 puntos = L 10 · Máx. 50% del pedido.</p>' +
       renderizarHistorialPuntos(u.ledger) +
       "</div></div></div>"
+    );
+  }
+  function adminView(usuario = user()) {
+    if (!esAdministrador(usuario)) {
+      S.view = "shop";
+      return shopView();
+    }
+    const ordenesRecientes = [...db.orders].sort((a, b) => b.ts - a.ts).slice(0, 10);
+    const ventasPagadas = db.orders
+      .filter((orden) => orden.status === "Pagado")
+      .reduce((total, orden) => total + orden.total, 0);
+    const filasOrdenes = ordenesRecientes.length
+      ? ordenesRecientes
+          .map(
+            (orden) =>
+              `<tr><td>${esc(orden.no)}</td><td>${esc(orden.contact.name)}</td><td>${fdate(orden.ts)}</td><td>${Lps(orden.total)}</td><td>${renderizarBadgeEstadoOrden(orden.status)}</td></tr>`,
+          )
+          .join("")
+      : '<tr><td colspan="5" class="mut">No hay pedidos.</td></tr>';
+
+    return (
+      '<h2 style="margin-top:20px">Panel de administración</h2><p class="mut">Resumen de usuarios y pedidos registrados.</p>' +
+      '<div class="two"><div class="panel"><h3>Usuarios</h3><b>' +
+      db.users.length +
+      '</b><p class="mut sm">Cuentas registradas</p></div><div class="panel"><h3>Pedidos</h3><b>' +
+      db.orders.length +
+      '</b><p class="mut sm">Ventas pagadas: ' +
+      Lps(ventasPagadas) +
+      '</p></div></div><div class="panel"><h3>Pedidos recientes</h3><div class="tabla-scroll"><table class="tbl"><thead><tr><th>Pedido</th><th>Cliente</th><th>Fecha</th><th>Total</th><th>Estado</th></tr></thead><tbody>' +
+      filasOrdenes +
+      '</tbody></table></div><button class="btn sm" style="margin-top:12px" data-act="nav" data-v="qa">Abrir panel QA</button></div>'
     );
   }
   function renderizarFilaResumen(etiqueta, valor, claseExtra) {
@@ -2294,16 +2320,18 @@
       S.view = "shop";
       return shopView();
     }
+    const herramientasAdministrativas = esAdministrador(u)
+      ? '<div class="panel" style="margin-top:16px"><h3>Usuarios y puntos</h3><div class="tabla-scroll" id="qaUsers"></div></div>' +
+        '<div class="panel"><h3>Datos guardados</h3><p class="sm mut" id="qaData"></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="saveHtml">💾 Descargar HTML con los datos actuales</button><button class="btn" data-act="exportJson">Exportar JSON</button><label class="btn" style="margin:0;cursor:pointer">Importar JSON<input type="file" accept="application/json" data-in="import" style="display:none"></label><button class="btn" data-act="reset" style="border-color:var(--err);color:var(--err)">Restablecer datos mock</button></div><p class="sm mut">Los datos viven en el almacenamiento del navegador y además se incrustan dentro del HTML al descargarlo: ese archivo arranca ya con todo lo que registraste.</p></div>' +
+        '<div class="panel"><h3>Cuentas y tarjetas de prueba</h3><div class="scroll"><table class="tbl"><tr><th>Rol</th><th>Correo</th><th>Contraseña</th></tr><tr><td>Cliente verificado</td><td>demo@estampa.hn</td><td>Demo1234!</td></tr><tr><td>Sin verificar</td><td>nuevo@estampa.hn</td><td>Nuevo1234!</td></tr><tr><td>Admin</td><td>admin@estampa.hn</td><td>Admin1234!</td></tr><tr><td>Otros mock</td><td>carlos@example.hn, maria@example.hn…</td><td>Camisa123!</td></tr></table></div><p class="sm mut">Cupones: BIENVENIDO10 (10%), CATRACHO15 (15%). Tarjetas: 4242 4242 4242 4242 aprueba, 4000 0000 0000 0002 rechaza, 4000 0000 0000 9995 sin fondos.</p></div>'
+      : "";
     return (
       '<h2 style="margin-top:20px">🧪 Panel de pruebas (QA)</h2><p class="mut">Las pruebas automáticas se ejecutan sobre una copia: al terminar, tus datos reales se restauran.</p>' +
       '<div class="panel"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="runAll">▶ Ejecutar las 10 pruebas</button></div></div>' +
       '<div id="qaRes">' +
       qaResultsHtml() +
       "</div>" +
-      '<div class="panel" style="margin-top:16px"><h3>Usuarios y puntos</h3><div class="tabla-scroll" id="qaUsers"></div></div>' +
-      '<div class="panel"><h3>Datos guardados</h3><p class="sm mut" id="qaData"></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="saveHtml">💾 Descargar HTML con los datos actuales</button><button class="btn" data-act="exportJson">Exportar JSON</button><label class="btn" style="margin:0;cursor:pointer">Importar JSON<input type="file" accept="application/json" data-in="import" style="display:none"></label><button class="btn" data-act="reset" style="border-color:var(--err);color:var(--err)">Restablecer datos mock</button></div>' +
-      '<p class="sm mut">Los datos viven en el almacenamiento del navegador y además se incrustan dentro del HTML al descargarlo: ese archivo arranca ya con todo lo que registraste.</p></div>' +
-      '<div class="panel"><h3>Cuentas y tarjetas de prueba</h3><div class="scroll"><table class="tbl"><tr><th>Rol</th><th>Correo</th><th>Contraseña</th></tr><tr><td>Cliente verificado</td><td>demo@estampa.hn</td><td>Demo1234!</td></tr><tr><td>Sin verificar</td><td>nuevo@estampa.hn</td><td>Nuevo1234!</td></tr><tr><td>Admin</td><td>admin@estampa.hn</td><td>Admin1234!</td></tr><tr><td>Otros mock</td><td>carlos@example.hn, maria@example.hn…</td><td>Camisa123!</td></tr></table></div><p class="sm mut">Cupones: BIENVENIDO10 (10%), CATRACHO15 (15%). Tarjetas: 4242 4242 4242 4242 aprueba, 4000 0000 0000 0002 rechaza, 4000 0000 0000 9995 sin fondos.</p></div>'
+      herramientasAdministrativas
     );
   }
   function renderQaResults() {
@@ -2361,12 +2389,39 @@
   }
 
   function go(v) {
+    if (v !== "access") limpiarHashAcceso();
     S.view = v;
     S.err = "";
     S.ov = null;
     renderAll();
     window.scrollTo(0, 0);
   }
+  function limpiarHashAcceso() {
+    S.accessRole = null;
+    if (window.perfilesAcceso.listarDisponibles().some((perfil) => perfil.rutaAcceso === location.hash)) {
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+  }
+  function actualizarVistaPorHash() {
+    const perfil = window.perfilesAcceso.listarDisponibles().find((opcion) => opcion.rutaAcceso === location.hash);
+    if (perfil) {
+      S.accessRole = perfil.puedeAdministrar || perfil.puedeVerQa ? perfil.rol : null;
+      S.view = S.accessRole ? "access" : "auth";
+      S.authMode = "login";
+      S.err = "";
+      renderAll();
+      return;
+    }
+    if (S.accessRole) {
+      S.accessRole = null;
+      if (S.view === "access") S.view = "shop";
+      S.err = "";
+      renderAll();
+    }
+  }
+  window.addEventListener("hashchange", () => {
+    if (APP_READY) actualizarVistaPorHash();
+  });
   const ACCIONES_NAVEGACION = {
     nav: (el) => {
       let v = el.dataset.v;
@@ -2377,6 +2432,7 @@
       }
       go(v);
     },
+    backToShop: () => go("shop"),
     scrollShop: () => {
       const s = $("#shop");
       if (s) s.scrollIntoView({ behavior: "smooth" });
@@ -2519,13 +2575,6 @@
       S.authMode = el.dataset.v;
       S.err = "";
       renderMain();
-    },
-    quick: async (el) => {
-      const r = await login(el.dataset.e, el.dataset.p);
-      if (r.ok) {
-        toast("Sesión iniciada", "ok");
-        go("account");
-      } else toast(r.error, "err");
     },
     logout: () => {
       logout();
@@ -2729,31 +2778,9 @@
     return true;
   }
 
-  function actualizarPerfilAcceso(elemento, evento) {
-    if (elemento.dataset.in !== "profile" || evento.type !== "change") return false;
-    const usuario = user();
-    if (!window.perfilesAcceso.tienePermiso(usuario, "puedeCambiarPerfil")) {
-      toast("No tienes permiso para cambiar de perfil.", "err");
-      renderAll();
-      return true;
-    }
-    const perfil = window.perfilesAcceso.listarDisponibles().find((opcion) => opcion.rol === elemento.value);
-    if (!perfil) {
-      toast("Perfil no válido.", "err");
-      renderAll();
-      return true;
-    }
-    usuario.role = perfil.rol;
-    save();
-    toast("Perfil cambiado a " + perfil.etiqueta, "ok");
-    renderAll();
-    return true;
-  }
-
   function onInput(evento) {
     const elemento = evento.target && evento.target.closest("[data-in]");
     if (!elemento) return;
-    if (actualizarPerfilAcceso(elemento, evento)) return;
     if (actualizarFiltroCatalogo(elemento)) return;
     if (actualizarPersonalizacionProducto(elemento)) return;
     if (actualizarCampoCheckout(elemento)) return;
@@ -2779,6 +2806,37 @@
     } else {
       go("account");
     }
+  }
+
+  async function procesarFormularioAccesoRestringido(formulario) {
+    const rolRuta = S.accessRole;
+    const perfilRuta = window.perfilesAcceso.obtener(rolRuta);
+    const datos = new FormData(formulario);
+    const resultado = await login(datos.get("email"), datos.get("password"));
+    if (!resultado.ok) {
+      S.err = resultado.error;
+      renderMain();
+      return;
+    }
+
+    const autorizado = perfilRuta.puedeAdministrar
+      ? esAdministrador(resultado.user)
+      : perfilRuta.puedeVerQa
+        ? puedeAccederQa(resultado.user)
+        : false;
+    if (!autorizado) {
+      logout();
+      S.err =
+        perfilRuta.puedeAdministrar
+          ? "Acceso denegado: se requieren permisos de administrador"
+          : "Acceso denegado: se requieren permisos para el panel QA";
+      renderAll();
+      return;
+    }
+
+    limpiarHashAcceso();
+    toast("Acceso autorizado", "ok");
+    go(perfilRuta.puedeAdministrar ? "admin" : "qa");
   }
 
   async function procesarFormularioRegistro(formulario) {
@@ -2848,6 +2906,7 @@
 
   const MANEJADORES_FORMULARIO = {
     login: procesarFormularioLogin,
+    restrictedAccess: procesarFormularioAccesoRestringido,
     register: procesarFormularioRegistro,
     verify: procesarFormularioVerificacion,
     checkout: procesarFormularioCheckout,
@@ -2880,7 +2939,7 @@
       db.session = null;
       save();
       toast("Tu sesión expiró por inactividad");
-      if (["account", "verify", "checkout"].includes(S.view)) go("shop");
+      if (["account", "verify", "checkout", "admin", "qa"].includes(S.view)) go("shop");
       else renderHeader();
     }
   }, 30000);
@@ -2900,6 +2959,8 @@
     db.settings.checks = db.settings.checks || {};
     db.lock = db.lock || {};
     db.cart = db.cart || [];
+    APP_READY = true;
+    actualizarVistaPorHash();
     renderAll();
     if (location.hash === "#autotest") {
       await runTests();

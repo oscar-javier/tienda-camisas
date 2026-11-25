@@ -7,9 +7,9 @@ class RegistroPerfilesAcceso {
     this.perfiles.set(rol, {
       rol,
       etiqueta: configuracion.etiqueta,
+      rutaAcceso: configuracion.rutaAcceso,
       puedeVerQa: Boolean(configuracion.puedeVerQa),
       puedeAdministrar: Boolean(configuracion.puedeAdministrar),
-      puedeCambiarPerfil: Boolean(configuracion.puedeCambiarPerfil),
     });
     return this;
   }
@@ -19,9 +19,9 @@ class RegistroPerfilesAcceso {
       this.perfiles.get(rol) || {
         rol: "invitado",
         etiqueta: "Invitado",
+        rutaAcceso: "#entrar",
         puedeVerQa: false,
         puedeAdministrar: false,
-        puedeCambiarPerfil: false,
       }
     );
   }
@@ -40,19 +40,19 @@ window.RegistroPerfilesAcceso = RegistroPerfilesAcceso;
 window.perfilesAcceso = new RegistroPerfilesAcceso()
   .registrar("cliente", {
     etiqueta: "Cliente",
+    rutaAcceso: "#entrar",
     puedeVerQa: false,
     puedeAdministrar: false,
-    puedeCambiarPerfil: false,
   })
   .registrar("tester", {
     etiqueta: "Tester QA",
+    rutaAcceso: "#tester",
     puedeVerQa: true,
     puedeAdministrar: false,
-    puedeCambiarPerfil: true,
   })
   .registrar("admin", {
     etiqueta: "Administrador",
+    rutaAcceso: "#admin",
     puedeVerQa: true,
     puedeAdministrar: true,
-    puedeCambiarPerfil: true,
   });
