@@ -162,29 +162,59 @@
   }
 
   let db = null;
+  let advertenciaAlmacenamiento = "";
+
+  function clasificarErrorAlmacenamiento(error) {
+    if (error instanceof SyntaxError) {
+      return "Los datos guardados estaban dañados y se restauró el estado inicial.";
+    }
+    if (error && error.name === "QuotaExceededError") {
+      return "El almacenamiento del navegador está lleno; los cambios no persistirán.";
+    }
+    return "El almacenamiento local no está disponible en este navegador.";
+  }
+
+  function reportarErrorAlmacenamiento(operacion, error) {
+    advertenciaAlmacenamiento = clasificarErrorAlmacenamiento(error);
+    console.warn("[EstampaHN] Error al " + operacion + " almacenamiento:", advertenciaAlmacenamiento, error);
+  }
+
   function load() {
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        db = JSON.parse(raw);
-        return true;
+      const datosCrudos = localStorage.getItem(KEY);
+      if (datosCrudos) {
+        const datos = JSON.parse(datosCrudos);
+        if (datos && typeof datos === "object") {
+          db = datos;
+          advertenciaAlmacenamiento = "";
+          return true;
+        }
       }
-    } catch (e) {}
+    } catch (error) {
+      reportarErrorAlmacenamiento("leer", error);
+    }
     try {
-      const t = $("#seed-data").textContent.trim();
-      if (t && t !== "null") {
-        db = JSON.parse(t);
-        save();
-        return true;
+      const elementoSemilla = $("#seed-data");
+      const datosCrudos = elementoSemilla ? elementoSemilla.textContent.trim() : "";
+      if (datosCrudos && datosCrudos !== "null") {
+        const datos = JSON.parse(datosCrudos);
+        if (datos && typeof datos === "object") {
+          db = datos;
+          save();
+          return true;
+        }
       }
-    } catch (e) {}
+    } catch (error) {
+      reportarErrorAlmacenamiento("leer los datos iniciales", error);
+    }
     return false;
   }
   function save() {
     try {
       localStorage.setItem(KEY, JSON.stringify(db));
-    } catch (e) {
-      /* modo memoria */
+      advertenciaAlmacenamiento = "";
+    } catch (error) {
+      reportarErrorAlmacenamiento("guardar", error);
     }
   }
   function exportable() {
@@ -214,30 +244,23 @@
     }, 500);
   }
 
-  const BASE = [
-    [1, "Guara Roja", "Gráficas", 289, "🦜", "guacamaya ave honduras tropical", 4.8],
-    [2, "Roatán Vibes", "Gráficas", 299, "🏝", "isla playa caribe verano", 4.7],
-    [3, "Café de Copán", "Gráficas", 279, "☕", "cafe copan cafetero", 4.6],
-    [4, "Tiburón Ballena", "Gráficas", 299, "🦈", "mar oceano utila animal", 4.5],
-    [5, "Minimal Montaña", "Minimalistas", 259, "⛰", "montana naturaleza aventura", 4.4],
-    [6, "Línea Sol", "Minimalistas", 249, "☀", "sol simple verano", 4.2],
-    [7, "Luna Simple", "Minimalistas", 249, "🌙", "luna noche simple", 4.3],
-    [8, "Fútbol Catracho", "Deportivas", 289, "⚽", "futbol seleccion catracho deporte", 4.9],
-    [9, "Running Club", "Deportivas", 269, "🏃", "correr maraton deporte", 4.1],
-    [10, "Gym Mode", "Deportivas", 279, "💪", "gimnasio pesas fitness", 4.5],
-    [11, "Equipo de Trabajo", "Corporativas", 239, "🤝", "empresa uniforme equipo", 4.0],
-    [12, "Camisa Lisa Personalizada", "Corporativas", 219, "", "logo empresa lisa evento", 4.3],
-    [13, "Baleada Lover", "Humor", 269, "🌮", "comida baleada gracioso", 4.8],
-    [14, "Modo Lunes", "Humor", 259, "😴", "lunes sueno gracioso", 4.2],
-    [15, "Dev Mode", "Humor", 289, "💻", "programador codigo tecnologia", 4.7],
-    [16, "Gamer Nivel Máx", "Humor", 289, "🎮", "videojuegos gamer control", 4.6],
-  ];
-  const COLSETS = [
-    ["Blanco", "Negro", "Azul marino", "Rojo"],
-    ["Negro", "Blanco", "Verde", "Gris"],
-    ["Azul marino", "Turquesa", "Blanco", "Amarillo"],
-    ["Rojo", "Negro", "Gris", "Blanco"],
-    ["Verde", "Azul marino", "Negro", "Amarillo"],
+  const CATALOGO_BASE = [
+    { id: 1, name: "Guara Roja", cat: "Gráficas", price: 289, design: "🦜", tags: "guacamaya ave honduras tropical", rating: 4.8, colors: ["Blanco", "Negro", "Azul marino", "Rojo"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 2, name: "Roatán Vibes", cat: "Gráficas", price: 299, design: "🏝", tags: "isla playa caribe verano", rating: 4.7, colors: ["Negro", "Blanco", "Verde", "Gris"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 3, name: "Café de Copán", cat: "Gráficas", price: 279, design: "☕", tags: "cafe copan cafetero", rating: 4.6, colors: ["Azul marino", "Turquesa", "Blanco", "Amarillo"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 4, name: "Tiburón Ballena", cat: "Gráficas", price: 299, design: "🦈", tags: "mar oceano utila animal", rating: 4.5, colors: ["Rojo", "Negro", "Gris", "Blanco"], sizes: ["M", "L", "XL"] },
+    { id: 5, name: "Minimal Montaña", cat: "Minimalistas", price: 259, design: "⛰", tags: "montana naturaleza aventura", rating: 4.4, colors: ["Verde", "Azul marino", "Negro", "Amarillo"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 6, name: "Línea Sol", cat: "Minimalistas", price: 249, design: "☀", tags: "sol simple verano", rating: 4.2, colors: ["Blanco", "Negro", "Azul marino", "Rojo"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 7, name: "Luna Simple", cat: "Minimalistas", price: 249, design: "🌙", tags: "luna noche simple", rating: 4.3, colors: ["Negro", "Blanco", "Verde", "Gris"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 8, name: "Fútbol Catracho", cat: "Deportivas", price: 289, design: "⚽", tags: "futbol seleccion catracho deporte", rating: 4.9, colors: ["Azul marino", "Turquesa", "Blanco", "Amarillo"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 9, name: "Running Club", cat: "Deportivas", price: 269, design: "🏃", tags: "correr maraton deporte", rating: 4.1, colors: ["Rojo", "Negro", "Gris", "Blanco"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 10, name: "Gym Mode", cat: "Deportivas", price: 279, design: "💪", tags: "gimnasio pesas fitness", rating: 4.5, colors: ["Verde", "Azul marino", "Negro", "Amarillo"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 11, name: "Equipo de Trabajo", cat: "Corporativas", price: 239, design: "🤝", tags: "empresa uniforme equipo", rating: 4.0, colors: ["Blanco", "Negro", "Azul marino", "Rojo"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 12, name: "Camisa Lisa Personalizada", cat: "Corporativas", price: 219, design: "", tags: "logo empresa lisa evento", rating: 4.3, colors: ["Negro", "Blanco", "Verde", "Gris"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 13, name: "Baleada Lover", cat: "Humor", price: 269, design: "🌮", tags: "comida baleada gracioso", rating: 4.8, colors: ["Azul marino", "Turquesa", "Blanco", "Amarillo"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 14, name: "Modo Lunes", cat: "Humor", price: 259, design: "😴", tags: "lunes sueno gracioso", rating: 4.2, colors: ["Rojo", "Negro", "Gris", "Blanco"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 15, name: "Dev Mode", cat: "Humor", price: 289, design: "💻", tags: "programador codigo tecnologia", rating: 4.7, colors: ["Verde", "Azul marino", "Negro", "Amarillo"], sizes: ["S", "M", "L", "XL", "XXL"] },
+    { id: 16, name: "Gamer Nivel Máx", cat: "Humor", price: 289, design: "🎮", tags: "videojuegos gamer control", rating: 4.6, colors: ["Blanco", "Negro", "Azul marino", "Rojo"], sizes: ["S", "M", "L", "XL", "XXL"] },
   ];
   function mulberry(a) {
     return () => {
@@ -358,16 +381,10 @@
       lock: {},
       settings: { checks: {} },
     };
-    db.products = BASE.map((b, i) => ({
-      id: b[0],
-      name: b[1],
-      cat: b[2],
-      price: b[3],
-      design: b[4],
-      tags: b[5],
-      rating: b[6],
-      colors: COLSETS[i % COLSETS.length],
-      sizes: i % 7 === 3 ? ["M", "L", "XL"] : SIZES.slice(),
+    db.products = CATALOGO_BASE.map((producto) => ({
+      ...producto,
+      colors: producto.colors.slice(),
+      sizes: producto.sizes.slice(),
     }));
     db.coupons = [
       { code: "BIENVENIDO10", pct: 10, active: true },
@@ -1650,70 +1667,121 @@
   }
 
   const GROUPS = [
-    "Registro e inicio de sesión",
-    "Adaptabilidad móvil",
-    "Carrito de compras",
-    "Usuarios y puntos de compra",
-    "Verificación de correos",
-    "Proceso de pago",
-    "Compra como invitado",
-    "Búsqueda y filtros",
-    "Rendimiento y fluidez",
-    "Seguridad de datos",
+    { clave: "cuenta", titulo: "Registro e inicio de sesión" },
+    { clave: "adaptabilidad", titulo: "Adaptabilidad móvil" },
+    { clave: "carrito", titulo: "Carrito de compras" },
+    { clave: "puntos", titulo: "Usuarios y puntos de compra" },
+    { clave: "verificacion", titulo: "Verificación de correos" },
+    { clave: "checkout", titulo: "Proceso de pago" },
+    { clave: "invitado", titulo: "Compra como invitado" },
+    { clave: "catalogo", titulo: "Búsqueda y filtros" },
+    { clave: "rendimiento", titulo: "Rendimiento y fluidez" },
+    { clave: "seguridad", titulo: "Seguridad de datos" },
   ];
+  const indiceGrupoPorClave = (clave) => GROUPS.findIndex((grupo) => grupo.clave === clave);
+  GROUPS.forEach((grupo) => {
+    grupo.g = indiceGrupoPorClave(grupo.clave);
+  });
   const MANUAL = [
-    [
-      "Registrar una cuenta nueva desde computadora y desde teléfono",
-      "Cerrar sesión y volver a entrar",
-      "Probar 5 contraseñas incorrectas y ver el bloqueo temporal",
-    ],
-    [
-      "Abrir en el teléfono real y recorrer tienda, carrito y pago",
-      "Rotar el teléfono (vertical/horizontal)",
-      "Probar la vista responsiva desde las DevTools del navegador (375 px)",
-    ],
-    [
-      "Agregar varias camisas personalizadas y cambiar cantidades",
-      "Recargar la página: el carrito debe mantenerse",
-      "Aplicar el cupón BIENVENIDO10",
-    ],
-    [
-      "Comprar con el usuario demo y ver los puntos en Cuenta",
-      "Canjear puntos en una segunda compra",
-      "Revisar la tabla de usuarios y puntos en este panel",
-    ],
-    [
-      "Registrar usuario y abrir ✉ para ver el código",
-      "Probar un código incorrecto y uno correcto",
-      "Comprar sin verificar y ver los puntos pendientes liberarse",
-    ],
-    [
-      "Pagar con 4242… (aprobada), 4000…0002 (rechazada) y 4000…9995 (sin fondos)",
-      "Probar transferencia y contra entrega",
-      "Intentar pagar con tarjeta vencida o CVV vacío",
-    ],
-    [
-      "Comprar sin iniciar sesión y confirmar el correo de pedido",
-      "Verificar que no se asignan puntos",
-      "Probar con correo inválido",
-    ],
-    [
-      "Buscar “café”, “futbol”, “xyz”",
-      "Combinar categoría + talla + color + rango de precio",
-      "Cambiar el orden por precio",
-    ],
-    [
-      "Navegar con la lista completa sin tirones",
-      "Medir carga en un teléfono de gama baja",
-      "Revisar que “Ver más” cargue rápido",
-    ],
-    [
-      "Intentar escribir <script> en nombre y texto de camisa",
-      "Revisar que no existan contraseñas en texto plano (Exportar JSON)",
-      "Dejar la sesión inactiva 30 min y confirmar que expira",
-    ],
-  ];
-  const TESTS = {};
+    {
+      grupo: "cuenta",
+      idAnterior: 1,
+      revisiones: [
+        "Registrar una cuenta nueva desde computadora y desde teléfono",
+        "Cerrar sesión y volver a entrar",
+        "Probar 5 contraseñas incorrectas y ver el bloqueo temporal",
+      ],
+    },
+    {
+      grupo: "adaptabilidad",
+      idAnterior: 2,
+      revisiones: [
+        "Abrir en el teléfono real y recorrer tienda, carrito y pago",
+        "Rotar el teléfono (vertical/horizontal)",
+        "Probar la vista responsiva desde las DevTools del navegador (375 px)",
+      ],
+    },
+    {
+      grupo: "carrito",
+      idAnterior: 3,
+      revisiones: [
+        "Agregar varias camisas personalizadas y cambiar cantidades",
+        "Recargar la página: el carrito debe mantenerse",
+        "Aplicar el cupón BIENVENIDO10",
+      ],
+    },
+    {
+      grupo: "puntos",
+      idAnterior: 4,
+      revisiones: [
+        "Comprar con el usuario demo y ver los puntos en Cuenta",
+        "Canjear puntos en una segunda compra",
+        "Revisar la tabla de usuarios y puntos en este panel",
+      ],
+    },
+    {
+      grupo: "verificacion",
+      idAnterior: 5,
+      revisiones: [
+        "Registrar usuario y abrir ✉ para ver el código",
+        "Probar un código incorrecto y uno correcto",
+        "Comprar sin verificar y ver los puntos pendientes liberarse",
+      ],
+    },
+    {
+      grupo: "checkout",
+      idAnterior: 6,
+      revisiones: [
+        "Pagar con 4242… (aprobada), 4000…0002 (rechazada) y 4000…9995 (sin fondos)",
+        "Probar transferencia y contra entrega",
+        "Intentar pagar con tarjeta vencida o CVV vacío",
+      ],
+    },
+    {
+      grupo: "invitado",
+      idAnterior: 7,
+      revisiones: [
+        "Comprar sin iniciar sesión y confirmar el correo de pedido",
+        "Verificar que no se asignan puntos",
+        "Probar con correo inválido",
+      ],
+    },
+    {
+      grupo: "catalogo",
+      idAnterior: 8,
+      revisiones: [
+        "Buscar “café”, “futbol”, “xyz”",
+        "Combinar categoría + talla + color + rango de precio",
+        "Cambiar el orden por precio",
+      ],
+    },
+    {
+      grupo: "rendimiento",
+      idAnterior: 9,
+      revisiones: [
+        "Navegar con la lista completa sin tirones",
+        "Medir carga en un teléfono de gama baja",
+        "Revisar que “Ver más” cargue rápido",
+      ],
+    },
+    {
+      grupo: "seguridad",
+      idAnterior: 10,
+      revisiones: [
+        "Intentar escribir <script> en nombre y texto de camisa",
+        "Revisar que no existan contraseñas en texto plano (Exportar JSON)",
+        "Dejar la sesión inactiva 30 min y confirmar que expira",
+      ],
+    },
+  ].map((grupoManual) => ({
+    ...grupoManual,
+    g: indiceGrupoPorClave(grupoManual.grupo),
+  }));
+  const TESTS = GROUPS.map((grupo) => ({
+    grupo: grupo.clave,
+    g: indiceGrupoPorClave(grupo.clave),
+    ejecutar: null,
+  }));
   const TPW = "Prueba123",
     OKCARD = "4242424242424242";
   const CONTACT = {
@@ -1736,7 +1804,7 @@
     if (verify) verifyCode(r.user, r.user.verify.code);
     return r.user;
   }
-  TESTS[1] = async (t) => {
+  TESTS[indiceGrupoPorClave("cuenta")].ejecutar = async (t) => {
     logout();
     t.ok(!(await register({ name: "A", email: "no-es-correo", password: TPW })).ok, "Rechaza correo inválido");
     t.ok(!(await register({ name: "QA", email: "qa1@example.hn", password: "abc" })).ok, "Rechaza contraseña débil");
@@ -1755,7 +1823,7 @@
     t.ok((await login("qa1@example.hn", TPW)).ok && user() !== null, "Credenciales correctas inician sesión");
     t.ok((await login("demo@estampa.hn", "Demo1234!")).ok, "Usuario demo mock puede iniciar sesión");
   };
-  TESTS[2] = async (t) => {
+  TESTS[indiceGrupoPorClave("adaptabilidad")].ejecutar = async (t) => {
     const vp = $("meta[name=viewport]");
     t.ok(vp && /width=device-width/.test(vp.content), "Meta viewport presente (width=device-width)");
     t.ok(
@@ -1793,7 +1861,7 @@
         ".",
     );
   };
-  TESTS[3] = async (t) => {
+  TESTS[indiceGrupoPorClave("carrito")].ejecutar = async (t) => {
     db.cart = [];
     const p = P(1);
     t.ok(totals(db.cart, {}).total === 0, "Carrito vacío: total 0");
@@ -1828,7 +1896,7 @@
       t.info("Almacenamiento local no disponible en este contexto");
     }
   };
-  TESTS[4] = async (t) => {
+  TESTS[indiceGrupoPorClave("puntos")].ejecutar = async (t) => {
     const u = await qaUser("pts@example.hn", true);
     qaFill(2, 8);
     const T = totals(db.cart, { u });
@@ -1861,7 +1929,7 @@
       "Tabla de usuarios: todos los saldos son consistentes con su historial (" + db.users.length + " usuarios)",
     );
   };
-  TESTS[5] = async (t) => {
+  TESTS[indiceGrupoPorClave("verificacion")].ejecutar = async (t) => {
     const u = await qaUser("ver@example.hn", false);
     t.ok(
       db.mails.some((m) => m.to === "ver@example.hn" && m.meta && /^\d{6}$/.test(m.meta.code)),
@@ -1890,7 +1958,7 @@
       "Puntos pendientes (" + pend + ") se liberan al verificar",
     );
   };
-  TESTS[6] = async (t) => {
+  TESTS[indiceGrupoPorClave("checkout")].ejecutar = async (t) => {
     t.ok(luhn("4242424242424242") && !luhn("4242424242424241"), "Algoritmo de Luhn valida / invalida tarjetas");
     t.ok(expOk("12/30") && !expOk("01/20") && !expOk("13/30") && !expOk("abc"), "Validación de vencimiento");
     const n0 = db.orders.length;
@@ -1923,7 +1991,7 @@
     const cod = await checkout({ contact: CONTACT, pay: { method: "cod" } });
     t.ok(cod.ok && cod.order.status === "Contra entrega", "Contra entrega registrada");
   };
-  TESTS[7] = async (t) => {
+  TESTS[indiceGrupoPorClave("invitado")].ejecutar = async (t) => {
     logout();
     const pts0 = db.users.reduce((a, u) => a + u.points + u.pending, 0);
     qaFill(2, 3);
@@ -1945,7 +2013,7 @@
     t.ok(db.cart.length === 0 && user() === null, "Carrito vacío y sigue sin sesión");
     t.ok(!db.users.some((u) => u.email === CONTACT.email), "No se crea usuario automáticamente");
   };
-  TESTS[8] = async (t) => {
+  TESTS[indiceGrupoPorClave("catalogo")].ejecutar = async (t) => {
     const F = (o) => search(db.products, { q: "", cat: "", color: "", size: "", min: "", max: "", sort: "rel", ...o });
     t.ok(
       F({ q: "guara" }).some((p) => p.id === 1),
@@ -1985,7 +2053,7 @@
       "Filtros combinados (texto + precio)",
     );
   };
-  TESTS[9] = async (t) => {
+  TESTS[indiceGrupoPorClave("rendimiento")].ejecutar = async (t) => {
     const big = Array.from({ length: 500 }, (_, i) => ({
       ...db.products[i % db.products.length],
       id: 1000 + i,
@@ -2035,7 +2103,7 @@
         t.info("DOMContentLoaded: " + nv.domContentLoadedEventEnd.toFixed(0) + " ms");
     } catch (e) {}
   };
-  TESTS[10] = async (t) => {
+  TESTS[indiceGrupoPorClave("seguridad")].ejecutar = async (t) => {
     const s = JSON.stringify(db);
     t.ok(
       !/Demo1234!|Admin1234!|Nuevo1234!|Camisa123!/.test(s),
@@ -2087,18 +2155,19 @@
     if (S.qaRunning) return;
     S.qaRunning = true;
     FAST = true;
-    const snap = JSON.stringify(db),
-      list = only ? [only] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    for (const g of list) {
+    const snap = JSON.stringify(db);
+    const grupos = only ? [GROUPS[only - 1]] : GROUPS;
+    for (const grupo of grupos) {
       const items = [],
         t = { ok: (c, m) => items.push({ k: c ? "ok" : "fail", m }), info: (m) => items.push({ k: "info", m }) };
       const t0 = performance.now();
+      const prueba = TESTS.find((item) => item.grupo === grupo.clave);
       try {
-        await TESTS[g](t);
+        await prueba.ejecutar(t);
       } catch (e) {
         items.push({ k: "fail", m: "Excepción: " + ((e && e.message) || e) });
       }
-      S.qa[g] = { items, ms: performance.now() - t0 };
+      S.qa[prueba.g + 1] = { items, ms: performance.now() - t0 };
       db = JSON.parse(snap);
       renderQaResults();
     }
@@ -2120,9 +2189,9 @@
     );
     return { p, f };
   }
-  function renderizarGrupoResultadoQa(nombreGrupo, indice) {
-    const grupo = indice + 1;
-    const resultado = S.qa[grupo];
+  function renderizarGrupoResultadoQa(grupo) {
+    const numeroGrupo = grupo.g + 1;
+    const resultado = S.qa[numeroGrupo];
     const fallos = resultado ? resultado.items.filter((item) => item.k === "fail").length : 0;
     let estadoGrupo = '<span class="tag no">pendiente</span>';
     if (resultado) {
@@ -2131,10 +2200,14 @@
         : '<span class="tag ok">OK</span>';
     }
 
-    const revisionesManuales = MANUAL[indice]
+    const grupoManual = MANUAL.find((item) => item.grupo === grupo.clave);
+    const revisionesManuales = grupoManual.revisiones
       .map((revision, indiceRevision) => {
-        const id = grupo + "-" + indiceRevision;
-        const marcado = db.settings.checks[id] ? "checked" : "";
+        const id = grupo.clave + "-" + indiceRevision;
+        const idAnterior = grupoManual.idAnterior + "-" + indiceRevision;
+        const marcado = (db.settings.checks[id] === undefined ? db.settings.checks[idAnterior] : db.settings.checks[id])
+          ? "checked"
+          : "";
         return `<label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin:4px 0"><input type="checkbox" style="width:20px;min-height:20px;margin-top:2px" data-in="chk" data-id="${id}" ${marcado}><span>${esc(revision)}</span></label>`;
       })
       .join("");
@@ -2147,7 +2220,7 @@
     }
 
     const abierto = resultado ? "open" : "";
-    return `<details class="grp" ${abierto}><summary>${grupo}. ${esc(nombreGrupo)} ${estadoGrupo} <button class="btn sm" data-act="runGroup" data-g="${grupo}">Ejecutar</button></summary><div class="gb">${contenidoResultado}<h3 style="margin-top:12px">Revisión manual</h3>${revisionesManuales}</div></details>`;
+    return `<details class="grp" ${abierto}><summary>${numeroGrupo}. ${esc(grupo.titulo)} ${estadoGrupo} <button class="btn sm" data-act="runGroup" data-g="${numeroGrupo}">Ejecutar</button></summary><div class="gb">${contenidoResultado}<h3 style="margin-top:12px">Revisión manual</h3>${revisionesManuales}</div></details>`;
   }
 
   function qaResultsHtml() {
@@ -2160,9 +2233,7 @@
       textoResumen = sm.f ? sm.f + " verificación(es) fallida(s)" : "Todo en verde";
     }
     const indicadorEjecucion = S.qaRunning ? " · ejecutando…" : "";
-    const filasGrupos = GROUPS.map((nombreGrupo, indice) =>
-      renderizarGrupoResultadoQa(nombreGrupo, indice),
-    ).join("");
+    const filasGrupos = GROUPS.map(renderizarGrupoResultadoQa).join("");
 
     return `<div class="alert ${claseResumen}"><b>${textoResumen}</b> · ${sm.p} correctas${indicadorEjecucion}</div>${filasGrupos}`;
   }
