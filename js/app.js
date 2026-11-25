@@ -1055,35 +1055,35 @@
   function unread() {
     return db.mails.filter((m) => !m.read).length;
   }
-  function renderHeader() {
-    const u = user();
-    const puedeVerQa = esAdministrador(u);
-    const enlaceQaEscritorio = puedeVerQa
+  function renderizarBotonesSesion(usuario) {
+    const enlaceQa = esAdministrador(usuario)
       ? '<button class="btn" data-act="nav" data-v="qa">🧪 Pruebas QA</button>'
       : "";
+    return (
+      '<nav class="dnav fila-flex-wrap"><button class="btn" data-act="nav" data-v="shop">Tienda</button>' +
+      enlaceQa +
+      '<button class="btn" data-act="nav" data-v="account">' +
+      (usuario ? accountChip(usuario) : "Entrar") +
+      "</button></nav>"
+    );
+  }
+  function renderizarBadgeCarrito(cantidad) {
+    return '<span class="badge cartN">' + (cantidad || "") + "</span>";
+  }
+  function renderizarNavegacionMovil(usuario) {
+    const puedeVerQa = esAdministrador(usuario);
     const opcionesMovil = [
       ["shop", "🛍", "Tienda"],
       ["cart", "🛒", "Carrito"],
-      ["account", "👤", u ? "Cuenta" : "Entrar"],
+      ["account", "👤", usuario ? "Cuenta" : "Entrar"],
       ...(puedeVerQa ? [["qa", "🧪", "Pruebas"]] : []),
     ];
-    $("#hdr").innerHTML =
-      '<header class="top"><div class="wrap hbar"><button class="logo btn" style="border:0;background:none" data-act="nav" data-v="shop" aria-label="Inicio">👕 Estampa<b>HN</b></button>' +
-      '<div class="search"><input id="q" type="search" placeholder="Buscar camisas (ej. café, fútbol, humor)…" value="' +
-      esc(S.f.q) +
-      '" autocomplete="off" data-in="q" aria-label="Buscar"></div>' +
-      '<nav class="dnav"><button class="btn" data-act="nav" data-v="shop">Tienda</button>' +
-      enlaceQaEscritorio +
-      '<button class="btn" data-act="nav" data-v="account">' +
-      (u ? accountChip(u) : "Entrar") +
-      "</button></nav>" +
-      '<div class="hicons"><button class="btn" data-act="ov" data-o="mail" aria-label="Correos">✉<span class="badge mailN"></span></button><button class="btn" data-act="ov" data-o="cart" aria-label="Carrito">🛒<span class="badge cartN"></span></button></div></div></header>';
-    $("#bottom").innerHTML = opcionesMovil
+    return opcionesMovil
       .map(
         ([v, i, t]) =>
           '<button class="' +
           (S.view === v ? "on" : "") +
-          (v === "account" && !u ? " entrar" : "") +
+          (v === "account" && !usuario ? " entrar" : "") +
           '" data-act="' +
           (v === "cart" ? "ov" : "nav") +
           '" data-v="' +
@@ -1092,10 +1092,24 @@
           i +
           "</span>" +
           t +
-          (v === "cart" ? '<span class="badge cartN"></span>' : "") +
+          (v === "cart" ? renderizarBadgeCarrito(cartCount()) : "") +
           "</button>",
       )
       .join("");
+  }
+  function renderHeader() {
+    const usuario = user();
+    const cantidadCarrito = cartCount();
+    $("#hdr").innerHTML =
+      '<header class="top"><div class="wrap hbar"><button class="logo btn" style="border:0;background:none" data-act="nav" data-v="shop" aria-label="Inicio">👕 Estampa<b>HN</b></button>' +
+      '<div class="search"><input id="q" type="search" placeholder="Buscar camisas (ej. café, fútbol, humor)…" value="' +
+      esc(S.f.q) +
+      '" autocomplete="off" data-in="q" aria-label="Buscar"></div>' +
+      renderizarBotonesSesion(usuario) +
+      '<div class="hicons fila-flex"><button class="btn" data-act="ov" data-o="mail" aria-label="Correos">✉<span class="badge mailN"></span></button><button class="btn" data-act="ov" data-o="cart" aria-label="Carrito">🛒' +
+      renderizarBadgeCarrito(cantidadCarrito) +
+      "</button></div></div></header>";
+    $("#bottom").innerHTML = renderizarNavegacionMovil(usuario);
     badges();
   }
   function badges() {
@@ -1249,6 +1263,56 @@
     o.innerHTML = h;
     document.body.classList.toggle("lock", !!S.ov);
   }
+  function renderizarSelectorOpciones(opciones, valorActivo, atributoData) {
+    return opciones
+      .map((opcion) => {
+        const valor = Array.isArray(opcion) ? opcion[0] : opcion;
+        const seleccionado = valorActivo === valor ? " on" : "";
+        if (atributoData === "oColor") {
+          return (
+            '<button class="sw' +
+            seleccionado +
+            '" style="background:' +
+            COLORS[valor] +
+            '" aria-label="' +
+            esc(valor) +
+            '" data-act="' +
+            atributoData +
+            '" data-v="' +
+            esc(valor) +
+            '"></button>'
+          );
+        }
+        if (atributoData === "oSize") {
+          return (
+            '<button class="chip' +
+            seleccionado +
+            '" data-act="' +
+            atributoData +
+            '" data-v="' +
+            esc(valor) +
+            '">' +
+            esc(valor) +
+            "</button>"
+          );
+        }
+        const titulo = Array.isArray(opcion) ? opcion[1] : valor;
+        return (
+          '<button class="chip' +
+          seleccionado +
+          '" data-act="' +
+          atributoData +
+          '" data-v="' +
+          esc(valor) +
+          '" title="' +
+          esc(titulo) +
+          '">' +
+          (esc(valor) || "∅") +
+          "</button>"
+        );
+      })
+      .join("");
+  }
   function prodModal() {
     const m = S.modal,
       p = P(m.pid),
@@ -1269,48 +1333,13 @@
       '<label>Color: <span class="mut">' +
       esc(m.color) +
       '</span></label><div class="chips">' +
-      p.colors
-        .map(
-          (c) =>
-            '<button class="sw ' +
-            (m.color === c ? "on" : "") +
-            '" style="background:' +
-            COLORS[c] +
-            '" aria-label="' +
-            esc(c) +
-            '" data-act="oColor" data-v="' +
-            esc(c) +
-            '"></button>',
-        )
-        .join("") +
+      renderizarSelectorOpciones(p.colors, m.color, "oColor") +
       "</div>" +
       '<label>Talla <span class="mut">(XL/XXL +L 20)</span></label><div class="chips">' +
-      p.sizes
-        .map(
-          (s) =>
-            '<button class="chip ' +
-            (m.size === s ? "on" : "") +
-            '" data-act="oSize" data-v="' +
-            s +
-            '">' +
-            s +
-            "</button>",
-        )
-        .join("") +
+      renderizarSelectorOpciones(p.sizes, m.size, "oSize") +
       "</div>" +
       '<label>Diseño <span class="mut">(cambiar diseño +L 50)</span></label><div class="chips">' +
-      DESIGNS.map(
-        (d) =>
-          '<button class="chip ' +
-          (m.design === d[0] ? "on" : "") +
-          '" data-act="oDesign" data-v="' +
-          esc(d[0]) +
-          '" title="' +
-          esc(d[1]) +
-          '">' +
-          (esc(d[0]) || "∅") +
-          "</button>",
-      ).join("") +
+      renderizarSelectorOpciones(DESIGNS, m.design, "oDesign") +
       "</div>" +
       '<label for="mtext">Texto personalizado <span class="mut">(máx. 20, +L 35)</span></label><input id="mtext" maxlength="20" data-in="mtext" value="' +
       esc(m.text) +
@@ -1323,41 +1352,42 @@
       '</p><button class="btn pri" style="width:100%" data-act="addCart">Agregar al carrito</button></div></div></div></div></div>'
     );
   }
-  function cartDrawer() {
-    const T = totals(db.cart, {});
+  function renderizarItemCarrito(linea, indice) {
     return (
-      '<div class="ov right" data-act="closeOv"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Carrito"><div style="padding:14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line)"><h2 style="margin:0">Tu carrito</h2><button class="btn sm ghost" data-act="closeOv" data-force="1">Cerrar ✕</button></div><div class="body">' +
-      (T.lines.length
-        ? T.lines
-            .map(
-              (l, i) =>
-                '<div class="line">' +
-                shirtSVG(l.color, l.design, l.text) +
-                "<div><b>" +
-                esc(l.p.name) +
-                '</b><div class="meta">' +
-                esc(l.color) +
-                " · " +
-                esc(l.size) +
-                (l.text ? " · “" + esc(l.text) + "”" : "") +
-                '</div><div class="qty"><button data-act="cQty" data-i="' +
-                i +
-                '" data-d="-1" aria-label="Menos">−</button><b>' +
-                l.qty +
-                '</b><button data-act="cQty" data-i="' +
-                i +
-                '" data-d="1" aria-label="Más">+</button><button class="btn sm ghost" data-act="cDel" data-i="' +
-                i +
-                '">Quitar</button></div></div><b>' +
-                Lps(l.line) +
-                "</b></div>",
-            )
-            .join("")
-        : '<div class="empty">Tu carrito está vacío.<br><button class="btn sm" style="margin-top:10px" data-act="closeOv" data-force="1">Seguir comprando</button></div>') +
-      '</div><div class="foot"><div class="tot"><span>Subtotal</span><b>' +
-      Lps(T.subtotal) +
-      '</b></div><div class="mut sm">Envío calculado en el pago · Gratis desde L 1,000</div><button class="btn pri" style="width:100%;margin-top:10px" data-act="goCheckout" ' +
-      (T.lines.length ? "" : "disabled") +
+      '<div class="line">' +
+      shirtSVG(linea.color, linea.design, linea.text) +
+      "<div><b>" +
+      esc(linea.p.name) +
+      '</b><div class="meta">' +
+      esc(linea.color) +
+      " · " +
+      esc(linea.size) +
+      (linea.text ? " · “" + esc(linea.text) + "”" : "") +
+      '</div><div class="qty"><button data-act="cQty" data-i="' +
+      indice +
+      '" data-d="-1" aria-label="Menos">−</button><b>' +
+      linea.qty +
+      '</b><button data-act="cQty" data-i="' +
+      indice +
+      '" data-d="1" aria-label="Más">+</button><button class="btn sm ghost" data-act="cDel" data-i="' +
+      indice +
+      '">Quitar</button></div></div><b>' +
+      Lps(linea.line) +
+      "</b></div>"
+    );
+  }
+  function cartDrawer() {
+    const desglose = totals(db.cart, {});
+    const contenidoCarrito = desglose.lines.length
+      ? desglose.lines.map(renderizarItemCarrito).join("")
+      : '<div class="empty">Tu carrito está vacío.<br><button class="btn sm" style="margin-top:10px" data-act="closeOv" data-force="1">Seguir comprando</button></div>';
+    return (
+      '<div class="ov right" data-act="closeOv"><aside class="drawer" role="dialog" aria-modal="true" aria-label="Carrito"><div class="fila-flex-entre" style="padding:14px;border-bottom:1px solid var(--line)"><h2 style="margin:0">Tu carrito</h2><button class="btn sm ghost" data-act="closeOv" data-force="1">Cerrar ✕</button></div><div class="body">' +
+      contenidoCarrito +
+      '</div><div class="foot">' +
+      renderizarFilaResumen("Subtotal", "<b>" + Lps(desglose.subtotal) + "</b>") +
+      '<div class="texto-pequeno-muted">Envío calculado en el pago · Gratis desde L 1,000</div><button class="btn pri" style="width:100%;margin-top:10px" data-act="goCheckout" ' +
+      (desglose.lines.length ? "" : "disabled") +
       ">Ir a pagar</button></div></aside></div>"
     );
   }
@@ -1442,7 +1472,7 @@
           `<tr><td>${esc(orden.no)}</td><td>${fdate(orden.ts)}</td><td>${Lps(orden.total)}</td><td>${renderizarBadgeEstadoOrden(orden.status)}</td><td>+${orden.earn}${orden.usedPts ? " / −" + orden.usedPts : ""}</td></tr>`,
       )
       .join("");
-    return `<div class="scroll"><table class="tbl"><thead><tr><th>Pedido</th><th>Fecha</th><th>Total</th><th>Pago</th><th>Puntos</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    return `<div class="tabla-scroll"><table class="tbl"><thead><tr><th>Pedido</th><th>Fecha</th><th>Total</th><th>Pago</th><th>Puntos</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   }
 
   function renderizarHistorialPuntos(movimientos) {
@@ -1455,7 +1485,7 @@
           )
           .join("")
       : '<tr><td colspan="4" class="mut">Sin movimientos</td></tr>';
-    return `<div class="scroll"><table class="tbl"><thead><tr><th>Fecha</th><th>Tipo</th><th>Pts</th><th>Ref.</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    return `<div class="tabla-scroll"><table class="tbl"><thead><tr><th>Fecha</th><th>Tipo</th><th>Pts</th><th>Ref.</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   }
 
   function accountView(u = user()) {
@@ -1487,6 +1517,10 @@
       renderizarHistorialPuntos(u.ledger) +
       "</div></div></div>"
     );
+  }
+  function renderizarFilaResumen(etiqueta, valor, claseExtra) {
+    const clases = claseExtra ? " " + claseExtra : "";
+    return '<div class="tot' + clases + '"><span>' + etiqueta + "</span><span>" + valor + "</span></div>";
   }
   function checkoutView(u) {
     const c = S.co,
@@ -1574,51 +1608,47 @@
   }
   function summaryHtml(T, u) {
     const c = S.co;
+    const filasProductos = T.lines
+      .map((linea) =>
+        renderizarFilaResumen(
+          linea.qty +
+            "× " +
+            esc(linea.p.name) +
+            ' <span class="mut">(' +
+            esc(linea.color) +
+            ", " +
+            esc(linea.size) +
+            ")</span>",
+          Lps(linea.line),
+          "sm",
+        ),
+      )
+      .join("");
+    const descuentoCupon = T.cd
+      ? renderizarFilaResumen(
+          "Cupón " + esc(T.coupon.code) + " (−" + T.coupon.pct + "%)",
+          "−" + Lps(T.cd),
+          "descuento",
+        )
+      : "";
+    const descuentoPuntos = T.pr
+      ? renderizarFilaResumen(
+          "Puntos canjeados (" + T.usedPts + ")",
+          "−" + Lps(T.pr),
+          "descuento",
+        )
+      : "";
     return (
       "<h3>Resumen</h3>" +
-      T.lines
-        .map(
-          (l) =>
-            '<div class="tot sm"><span>' +
-            l.qty +
-            "× " +
-            esc(l.p.name) +
-            ' <span class="mut">(' +
-            esc(l.color) +
-            ", " +
-            esc(l.size) +
-            ")</span></span><span>" +
-            Lps(l.line) +
-            "</span></div>",
-        )
-        .join("") +
-      '<hr style="border:0;border-top:1px solid var(--line)"><div class="tot"><span>Subtotal</span><span>' +
-      Lps(T.subtotal) +
-      "</span></div>" +
-      (T.cd
-        ? '<div class="tot" style="color:var(--ok)"><span>Cupón ' +
-          esc(T.coupon.code) +
-          " (−" +
-          T.coupon.pct +
-          "%)</span><span>−" +
-          Lps(T.cd) +
-          "</span></div>"
-        : "") +
-      (T.pr
-        ? '<div class="tot" style="color:var(--ok)"><span>Puntos canjeados (' +
-          T.usedPts +
-          ")</span><span>−" +
-          Lps(T.pr) +
-          "</span></div>"
-        : "") +
-      '<div class="tot"><span>Envío</span><span>' +
-      (T.ship ? Lps(T.ship) : "Gratis") +
-      '</span></div><div class="tot g"><span>Total</span><span>' +
-      Lps(T.total) +
-      '</span></div><div class="mut sm">ISV (15%) incluido: ' +
-      Lps(T.isv) +
-      "</div>" +
-      '<label for="c_coupon">Cupón</label><div style="display:flex;gap:6px"><input id="c_coupon" name="coupon" data-in="co" value="' +
+      filasProductos +
+      '<hr style="border:0;border-top:1px solid var(--line)">' +
+      renderizarFilaResumen("Subtotal", Lps(T.subtotal)) +
+      descuentoCupon +
+      descuentoPuntos +
+      renderizarFilaResumen("Envío", T.ship ? Lps(T.ship) : "Gratis") +
+      renderizarFilaResumen("Total", '<b class="monto-destacado">' + Lps(T.total) + "</b>", "g") +
+      renderizarFilaResumen("ISV (15%) incluido", Lps(T.isv), "mut sm") +
+      '<label for="c_coupon">Cupón</label><div class="fila-flex"><input id="c_coupon" name="coupon" data-in="co" value="' +
       esc(c.coupon) +
       '" placeholder="BIENVENIDO10" autocapitalize="characters"></div>' +
       (c.coupon && !T.coupon ? '<div class="sm" style="color:var(--err)">Cupón inválido o vencido.</div>' : "") +
@@ -2245,7 +2275,7 @@
       '<div id="qaRes">' +
       qaResultsHtml() +
       "</div>" +
-      '<div class="panel" style="margin-top:16px"><h3>Usuarios y puntos</h3><div class="scroll" id="qaUsers"></div></div>' +
+      '<div class="panel" style="margin-top:16px"><h3>Usuarios y puntos</h3><div class="tabla-scroll" id="qaUsers"></div></div>' +
       '<div class="panel"><h3>Datos guardados</h3><p class="sm mut" id="qaData"></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="saveHtml">💾 Descargar HTML con los datos actuales</button><button class="btn" data-act="exportJson">Exportar JSON</button><label class="btn" style="margin:0;cursor:pointer">Importar JSON<input type="file" accept="application/json" data-in="import" style="display:none"></label><button class="btn" data-act="reset" style="border-color:var(--err);color:var(--err)">Restablecer datos mock</button></div>' +
       '<p class="sm mut">Los datos viven en el almacenamiento del navegador y además se incrustan dentro del HTML al descargarlo: ese archivo arranca ya con todo lo que registraste.</p></div>' +
       '<div class="panel"><h3>Cuentas y tarjetas de prueba</h3><div class="scroll"><table class="tbl"><tr><th>Rol</th><th>Correo</th><th>Contraseña</th></tr><tr><td>Cliente verificado</td><td>demo@estampa.hn</td><td>Demo1234!</td></tr><tr><td>Sin verificar</td><td>nuevo@estampa.hn</td><td>Nuevo1234!</td></tr><tr><td>Admin</td><td>admin@estampa.hn</td><td>Admin1234!</td></tr><tr><td>Otros mock</td><td>carlos@example.hn, maria@example.hn…</td><td>Camisa123!</td></tr></table></div><p class="sm mut">Cupones: BIENVENIDO10 (10%), CATRACHO15 (15%). Tarjetas: 4242 4242 4242 4242 aprueba, 4000 0000 0000 0002 rechaza, 4000 0000 0000 9995 sin fondos.</p></div>'
