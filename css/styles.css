@@ -906,3 +906,46 @@ button[type="submit"].btn.pri {
 .top .btn:not(.pri):hover {
   background: rgba(255, 255, 255, 0.12);
 }
+
+.fila-flex {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fila-flex-entre {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.fila-flex-wrap {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.columna-flex {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.texto-pequeno-muted {
+  font-size: 0.85rem;
+  color: var(--mut);
+}
+
+.monto-destacado {
+  font-weight: 800;
+  color: var(--pri, var(--ac));
+}
+
+.tabla-scroll {
+  overflow-x: auto;
+}
+
+.tot.descuento {
+  color: var(--ok);
+}
