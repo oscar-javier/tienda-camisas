@@ -2312,7 +2312,7 @@
     renderAll();
     window.scrollTo(0, 0);
   }
-  const ACT = {
+  const ACCIONES_NAVEGACION = {
     nav: (el) => {
       let v = el.dataset.v;
       if (v === "account" && !user()) v = "auth";
@@ -2378,6 +2378,9 @@
       S.shown += 12;
       renderGrid();
     },
+  };
+
+  const ACCIONES_CARRITO = {
     openProd: (el) => {
       const p = P(+el.dataset.id);
       S.modal = {
@@ -2454,6 +2457,9 @@
       });
       renderMain();
     },
+  };
+
+  const ACCIONES_SESION = {
     authMode: (el) => {
       S.authMode = el.dataset.v;
       S.err = "";
@@ -2492,8 +2498,14 @@
       S.authMode = "register";
       go("auth");
     },
+  };
+
+  const ACCIONES_QA = {
     runAll: () => runTests(),
     runGroup: (el) => runTests(+el.dataset.g),
+  };
+
+  const ACCIONES_DATOS = {
     saveHtml: () => {
       download("tienda-camisas.html", buildHtml(), "text/html");
       toast("HTML descargado con los datos actuales", "ok");
@@ -2510,6 +2522,15 @@
       renderAll();
     },
   };
+
+  const ACT = {
+    ...ACCIONES_NAVEGACION,
+    ...ACCIONES_CARRITO,
+    ...ACCIONES_SESION,
+    ...ACCIONES_QA,
+    ...ACCIONES_DATOS,
+  };
+
   document.addEventListener("click", (e) => {
     const el = e.target.closest("[data-act]");
     if (!el) return;
@@ -2520,12 +2541,13 @@
     }
   });
   let qT = 0;
-  function onInput(e) {
-    const el = e.target.closest("[data-in]");
-    if (!el) return;
-    const k = el.dataset.in;
-    if (k === "q") {
-      S.f.q = el.value.slice(0, 60);
+  function actualizarFiltroCatalogo(elemento) {
+    const mapaFiltros = { q: "q", sort: "sort", min: "min", max: "max" };
+    const claveFiltro = mapaFiltros[elemento.dataset.in];
+    if (!claveFiltro) return false;
+
+    S.f[claveFiltro] = claveFiltro === "q" ? elemento.value.slice(0, 60) : elemento.value;
+    if (claveFiltro === "q") {
       clearTimeout(qT);
       qT = setTimeout(() => {
         if (S.view !== "shop") {
@@ -2537,152 +2559,230 @@
           renderGrid();
         }
       }, 150);
-    } else if (k === "sort") {
-      S.f.sort = el.value;
+    } else {
+      if (claveFiltro === "min" || claveFiltro === "max") S.shown = 12;
       renderGrid();
-    } else if (k === "min" || k === "max") {
-      S.f[k] = el.value;
-      S.shown = 12;
-      renderGrid();
-    } else if (k === "mtext") {
-      S.modal.text = cleanText(el.value).length < el.value.length && false ? el.value : el.value.slice(0, 20);
-      const p = P(S.modal.pid);
-      $("#mprev").innerHTML = shirtSVG(S.modal.color, S.modal.design, cleanText(S.modal.text));
-      $("#mprice").textContent = Lps(unitPrice(p, { ...S.modal, text: cleanText(S.modal.text) }) * S.modal.qty);
-    } else if (k === "co") {
-      const n = el.name;
-      let v = el.value;
-      if (n === "card") {
-        v = v
-          .replace(/\D/g, "")
-          .slice(0, 19)
-          .replace(/(.{4})/g, "$1 ")
-          .trim();
-        el.value = v;
-      }
-      if (n === "exp") {
-        let d = v.replace(/\D/g, "").slice(0, 4);
-        if (d.length > 2) d = d.slice(0, 2) + "/" + d.slice(2);
-        v = d;
-        el.value = v;
-      }
-      if (n === "cvv") {
-        v = v.replace(/\D/g, "").slice(0, 4);
-        el.value = v;
-      }
-      S.co[n] = v;
-      if (n === "coupon" || n === "redeem") {
-        const u = user(),
-          T = totals(db.cart, { coupon: S.co.coupon, redeem: u ? +S.co.redeem : 0, u });
-        const sm = $("#summary");
-        const pos = el.selectionStart;
-        sm.innerHTML = summaryHtml(T, u);
-        const ne = $("#c_" + n);
-        if (ne) {
-          ne.focus();
-          try {
-            ne.setSelectionRange(pos, pos);
-          } catch (x) {}
-        }
-        const b = $("form[data-form=checkout] .btn.pri");
-        if (b && !S.busy) b.textContent = "Confirmar y pagar " + Lps(T.total);
-      }
-    } else if (k === "chk") {
-      db.settings.checks[el.dataset.id] = el.checked;
-      save();
-    } else if (k === "import" && e.type === "change") {
-      const f = el.files[0];
-      if (!f) return;
-      const rd = new FileReader();
-      rd.onload = () => {
-        try {
-          const d = JSON.parse(rd.result);
-          if (!d || !Array.isArray(d.users) || !Array.isArray(d.products) || !Array.isArray(d.orders))
-            throw new Error("Formato inválido");
-          d.session = null;
-          d.cart = d.cart || [];
-          d.lock = {};
-          d.mails = d.mails || [];
-          d.coupons = d.coupons || [];
-          d.settings = d.settings || { checks: {} };
-          db = d;
-          save();
-          toast("Datos importados", "ok");
-          renderAll();
-        } catch (x) {
-          toast("Archivo no válido", "err");
-        }
-      };
-      rd.readAsText(f);
     }
+    return true;
+  }
+
+  function actualizarVistaPreviaModal() {
+    if (!S.modal) return;
+    const producto = P(S.modal.pid);
+    if (!producto) return;
+    const vistaPrevia = $("#mprev");
+    const precio = $("#mprice");
+    if (vistaPrevia) {
+      vistaPrevia.innerHTML = shirtSVG(S.modal.color, S.modal.design, S.modal.text);
+    }
+    if (precio) {
+      precio.textContent = Lps(unitPrice(producto, S.modal) * S.modal.qty);
+    }
+  }
+
+  function actualizarPersonalizacionProducto(elemento) {
+    if (elemento.dataset.in !== "mtext" || !S.modal) return false;
+    const textoSaneado = cleanText(elemento.value).slice(0, 20);
+    if (elemento.value !== textoSaneado) elemento.value = textoSaneado;
+    S.modal.text = textoSaneado;
+    actualizarVistaPreviaModal();
+    return true;
+  }
+
+  function actualizarResumenCheckout(campo, elemento) {
+    const usuarioActual = user();
+    const desglose = totals(db.cart, {
+      coupon: S.co.coupon,
+      redeem: usuarioActual ? +S.co.redeem : 0,
+      u: usuarioActual,
+    });
+    const resumen = $("#summary");
+    const posicion = campo === "coupon" ? elemento.selectionStart : null;
+    if (resumen) resumen.innerHTML = summaryHtml(desglose, usuarioActual);
+
+    const elementoActualizado = $("#c_" + campo);
+    if (elementoActualizado) {
+      elementoActualizado.focus();
+      if (posicion !== null) {
+        try {
+          elementoActualizado.setSelectionRange(posicion, posicion);
+        } catch (error) {
+          console.warn("[EstampaHN] No se pudo restaurar la posición del cursor:", error);
+        }
+      }
+    }
+
+    const botonPago = $('form[data-form="checkout"] .btn.pri');
+    if (botonPago && !S.busy) botonPago.textContent = "Confirmar y pagar " + Lps(desglose.total);
+  }
+
+  function actualizarCampoCheckout(elemento) {
+    if (elemento.dataset.in !== "co" || !elemento.name) return false;
+    const campo = elemento.name;
+    let valor = elemento.value;
+    if (campo === "card") {
+      valor = valor
+        .replace(/\D/g, "")
+        .slice(0, 19)
+        .replace(/(.{4})/g, "$1 ")
+        .trim();
+    } else if (campo === "exp") {
+      const digitos = valor.replace(/\D/g, "").slice(0, 4);
+      valor = digitos.length > 2 ? digitos.slice(0, 2) + "/" + digitos.slice(2) : digitos;
+    } else if (campo === "cvv") {
+      valor = valor.replace(/\D/g, "").slice(0, 4);
+    }
+    if (elemento.value !== valor) elemento.value = valor;
+    S.co[campo] = valor;
+
+    if (campo === "coupon" || campo === "redeem") actualizarResumenCheckout(campo, elemento);
+    return true;
+  }
+
+  function actualizarRevisionQa(elemento) {
+    if (elemento.dataset.in !== "chk") return false;
+    db.settings.checks[elemento.dataset.id] = elemento.checked;
+    save();
+    return true;
+  }
+
+  function importarDatosArchivo(elemento, evento) {
+    if (elemento.dataset.in !== "import" || evento.type !== "change") return false;
+    const archivo = elemento.files[0];
+    if (!archivo) return true;
+    const lector = new FileReader();
+    lector.onload = () => {
+      try {
+        const datos = JSON.parse(lector.result);
+        if (!datos || !Array.isArray(datos.users) || !Array.isArray(datos.products) || !Array.isArray(datos.orders))
+          throw new Error("Formato inválido");
+        datos.session = null;
+        datos.cart = datos.cart || [];
+        datos.lock = {};
+        datos.mails = datos.mails || [];
+        datos.coupons = datos.coupons || [];
+        datos.settings = datos.settings || { checks: {} };
+        db = datos;
+        save();
+        toast("Datos importados", "ok");
+        renderAll();
+      } catch (error) {
+        toast("Archivo no válido", "err");
+      }
+    };
+    lector.readAsText(archivo);
+    return true;
+  }
+
+  function onInput(evento) {
+    const elemento = evento.target && evento.target.closest("[data-in]");
+    if (!elemento) return;
+    if (actualizarFiltroCatalogo(elemento)) return;
+    if (actualizarPersonalizacionProducto(elemento)) return;
+    if (actualizarCampoCheckout(elemento)) return;
+    if (actualizarRevisionQa(elemento)) return;
+    importarDatosArchivo(elemento, evento);
   }
   document.addEventListener("input", onInput);
   document.addEventListener("change", onInput);
-  document.addEventListener("submit", async (e) => {
-    const form = e.target.closest("form[data-form]");
-    if (!form) return;
-    e.preventDefault();
-    const k = form.dataset.form,
-      fd = Object.fromEntries(new FormData(form));
-    S.err = "";
-    if (k === "login") {
-      const r = await login(fd.email, fd.password);
-      if (!r.ok) {
-        S.err = r.error;
-        renderMain();
-        return;
-      }
-      toast("¡Bienvenido!", "ok");
-      const back = db.cart.length && S.back === "checkout";
-      S.back = "";
-      back ? ACT.goCheckout() : go(r.user.verified ? "account" : "account");
-    } else if (k === "register") {
-      const r = await register(fd);
-      if (!r.ok) {
-        S.err = r.error;
-        renderMain();
-        return;
-      }
-      toast("Cuenta creada. Verifica tu correo.", "ok");
-      S.vcode = "";
-      go("verify");
-      badges();
-    } else if (k === "verify") {
-      const u = user();
-      if (!u) return go("auth");
-      const r = verifyCode(u, fd.code);
-      if (!r.ok) {
-        S.err = r.error;
-        renderMain();
-        return;
-      }
-      S.vcode = "";
-      toast("Correo verificado ✔", "ok");
-      go("account");
-    } else if (k === "checkout") {
-      if (S.busy) return;
-      S.busy = true;
+  async function procesarFormularioLogin(formulario) {
+    const datos = new FormData(formulario);
+    const resultado = await login(datos.get("email"), datos.get("password"));
+    if (!resultado.ok) {
+      S.err = resultado.error;
       renderMain();
-      const c = S.co;
-      const r = await checkout({
-        contact: { name: c.name, email: c.email, phone: c.phone, dept: c.dept, city: c.city, addr: c.addr },
-        pay: { method: c.pay, card: c.card, exp: c.exp, cvv: c.cvv, holder: c.holder },
-        coupon: c.coupon,
-        redeem: +c.redeem || 0,
-      });
-      S.busy = false;
-      if (!r.ok) {
-        S.err = r.error;
-        toast(r.error, "err");
-        renderMain();
-        window.scrollTo(0, 0);
-        return;
-      }
-      S.last = r.order;
-      Object.assign(S.co, { card: "", exp: "", cvv: "", coupon: "", redeem: 0 });
-      go("done");
-      badges();
+      return;
     }
+
+    toast("¡Bienvenido!", "ok");
+    const regresarAlCheckout = db.cart.length && S.back === "checkout";
+    S.back = "";
+    if (regresarAlCheckout) {
+      ACT.goCheckout();
+    } else {
+      go("account");
+    }
+  }
+
+  async function procesarFormularioRegistro(formulario) {
+    const datos = new FormData(formulario);
+    const resultado = await register({
+      name: datos.get("name"),
+      email: datos.get("email"),
+      password: datos.get("password"),
+    });
+    if (!resultado.ok) {
+      S.err = resultado.error;
+      renderMain();
+      return;
+    }
+
+    toast("Cuenta creada. Verifica tu correo.", "ok");
+    S.vcode = "";
+    go("verify");
+    badges();
+  }
+
+  function procesarFormularioVerificacion(formulario) {
+    const usuarioActual = user();
+    if (!usuarioActual) {
+      go("auth");
+      return;
+    }
+
+    const codigo = new FormData(formulario).get("code");
+    const resultado = verifyCode(usuarioActual, codigo);
+    if (!resultado.ok) {
+      S.err = resultado.error;
+      renderMain();
+      return;
+    }
+
+    S.vcode = "";
+    toast("Correo verificado ✔", "ok");
+    go("account");
+  }
+
+  async function procesarFormularioCheckout(formulario) {
+    if (!formulario || formulario.dataset.form !== "checkout" || S.busy) return;
+    S.busy = true;
+    renderMain();
+    const c = S.co;
+    const resultado = await checkout({
+      contact: { name: c.name, email: c.email, phone: c.phone, dept: c.dept, city: c.city, addr: c.addr },
+      pay: { method: c.pay, card: c.card, exp: c.exp, cvv: c.cvv, holder: c.holder },
+      coupon: c.coupon,
+      redeem: +c.redeem || 0,
+    });
+    S.busy = false;
+    if (!resultado.ok) {
+      S.err = resultado.error;
+      toast(resultado.error, "err");
+      renderMain();
+      window.scrollTo(0, 0);
+      return;
+    }
+
+    S.last = resultado.order;
+    Object.assign(S.co, { card: "", exp: "", cvv: "", coupon: "", redeem: 0 });
+    go("done");
+    badges();
+  }
+
+  const MANEJADORES_FORMULARIO = {
+    login: procesarFormularioLogin,
+    register: procesarFormularioRegistro,
+    verify: procesarFormularioVerificacion,
+    checkout: procesarFormularioCheckout,
+  };
+
+  document.addEventListener("submit", async (evento) => {
+    const formulario = evento.target;
+    const manejador = formulario && MANEJADORES_FORMULARIO[formulario.dataset.form];
+    if (!manejador) return;
+    evento.preventDefault();
+    S.err = "";
+    await manejador(formulario);
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && S.ov) {
